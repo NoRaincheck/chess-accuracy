@@ -1,3 +1,31 @@
+# Chess Accuracy
+
+The purpose of this repository is implement and test chess accuracy using different engines. Even though there are notes from [Lichess](https://lichess.org/page/accuracy), the equations and tuning are based on their chosen engine, and may not be applicable if different UCI compatible engines are used. 
+
+This includes replicating the win-percentage formula:
+
+$$
+Pr(Win) = 50 + 50 * (2 / (1 + \exp(-0.00368208 * centipawns)) - 1)
+$$
+
+Move-by-move accuracy:
+
+$$
+Accuracy = 103.1668 * exp(-0.04354 * (winPercentBefore - winPercentAfter)) - 3.1669
+$$
+
+Game level accuracy is then calculated by:
+
+$$
+Game Accuracy = (Weighted Average Accuracy + Harmonic Mean Accuracy)/2
+$$
+
+Where `Weighted Average Accuracy` is weighted by the standard deviation over a smoothing window (they those a window of 10 in the Lichess code). 
+
+With this high number of parameters in the equation it may be worth having a reproducible way to tune these (arbitrary) metrics
+
+---
+
 This repository is created via `uv`. And can be setup firstly by running:
 
 ```sh
@@ -5,7 +33,7 @@ pipx install uv
 uv install
 ```
 
-The example script is shown in `calculate_accuracy.py`, the current implementation is based on [Lichess notes and their Scala implementation](https://lichess.org/page/accuracy). My current thought process is to package it as a standalone application using `pyinstaller` using `pydeargui` as a GUI. 
+The example script is shown in `calculate_accuracy.py`, the current implementation is based on [Lichess notes](https://lichess.org/page/accuracy) and their [Scala implementation](https://github.com/lichess-org/lila/blob/master/modules/analyse/src/main/AccuracyPercent.scala#L38-L44). My current thought process is to package it as a standalone application using `pyinstaller` using `pydeargui` as a GUI. 
 
 This repository is partly to learn how to build GUI applications and package them for Windows.
 
