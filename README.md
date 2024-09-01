@@ -11,7 +11,7 @@ $$
 Move-by-move accuracy:
 
 $$
-Accuracy = 103.1668 * exp(-0.04354 * (WinPercentBefore - WinPercentAfter)) - 3.1669
+Accuracy = 103.1668 * \exp(-0.04354 * (WinPercentBefore - WinPercentAfter)) - 3.1669
 $$
 
 Game level accuracy is then calculated by:
