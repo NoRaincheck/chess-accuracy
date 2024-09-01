@@ -5,7 +5,7 @@ The purpose of this repository is implement and test chess accuracy using differ
 This includes replicating the win-percentage formula:
 
 $$
-Pr(Win) = 50 + 50 * (2 / (1 + \exp(-0.00368208 * Centipawns)) - 1)
+ProbabilityWin \approx 50 + 50 * (2 / (1 + \exp(-0.00368208 * Centipawns)) - 1)
 $$
 
 Move-by-move accuracy:
