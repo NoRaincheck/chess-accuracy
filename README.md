@@ -5,7 +5,7 @@ pipx install uv
 uv install
 ```
 
-The example script is shown in `calculate_accuracy.py` but there is a lot more work that is needed. My current thought process is to package it as a standalone application using `pyinstaller` using `pydeargui` as a GUI. 
+The example script is shown in `calculate_accuracy.py`, the current implementation is based on [Lichess notes and their Scala implementation](https://lichess.org/page/accuracy). My current thought process is to package it as a standalone application using `pyinstaller` using `pydeargui` as a GUI. 
 
 This repository is partly to learn how to build GUI applications and package them for Windows.
 
