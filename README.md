@@ -9,7 +9,7 @@ The example script is shown in `calculate_accuracy.py`, the current implementati
 
 This repository is partly to learn how to build GUI applications and package them for Windows.
 
-It will come bundled with the Fruit v2.1 open source chess engine for portability, but will work with any UCI compatible engine such as Lc0 or Stockfish.
+It will come bundled with the [Fruit v2.1 open source](https://github.com/Warpten/Fruit-2.1) chess engine for portability, but will work with any UCI compatible engine such as Lc0 or Stockfish.
 
 ## Example
 
