@@ -1,0 +1,20 @@
+[Event "Live Chess"]
+[Site "Chess.com"]
+[Date "2024.08.31"]
+[Round "?"]
+[White "Hikaru"]
+[Black "DanielNaroditsky"]
+[Result "0-1"]
+[ECO "A21"]
+[WhiteElo "3225"]
+[BlackElo "3151"]
+[TimeControl "180"]
+[EndTime "8:20:28 PDT"]
+[Termination "DanielNaroditsky won by resignation"]
+[Annotator "W 90.2/78 B 95.9/97"]
+
+1. c4 e5 2. Nc3 Bb4 3. g3 Bxc3 4. bxc3 d6 5. Bg2 Nf6 6. d3 O-O 7. Nf3 Re8 8. O-O
+e4 9. Nd4 Nbd7 10. h3 Nc5 11. Be3 Bd7 12. Nb3 Na4 13. Qd2 c5 14. Rae1 Bc6 15.
+Qc2 h6 16. Kh2 exd3 17. exd3 Bxg2 18. Kxg2 Qd7 19. f3 Re6 20. Nd2 Rae8 21. Ne4
+d5 22. Nxf6+ gxf6 23. Bf2 Rxe1 24. Rxe1 Rxe1 25. Bxe1 dxc4 26. dxc4 Nb6 27. Bf2
+Nxc4 28. Bxc5 b6 29. Bd4 Qxd4 0-1
