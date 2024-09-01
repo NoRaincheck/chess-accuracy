@@ -5,19 +5,19 @@ The purpose of this repository is implement and test chess accuracy using differ
 This includes replicating the win-percentage formula:
 
 $$
-Pr(Win) = 50 + 50 * (2 / (1 + \exp(-0.00368208 * centipawns)) - 1)
+Pr(Win) = 50 + 50 * (2 / (1 + \exp(-0.00368208 * Centipawns)) - 1)
 $$
 
 Move-by-move accuracy:
 
 $$
-Accuracy = 103.1668 * exp(-0.04354 * (winPercentBefore - winPercentAfter)) - 3.1669
+Accuracy = 103.1668 * exp(-0.04354 * (WinPercentBefore - WinPercentAfter)) - 3.1669
 $$
 
 Game level accuracy is then calculated by:
 
 $$
-Game Accuracy = (Weighted Average Accuracy + Harmonic Mean Accuracy)/2
+GameAccuracy = (WeightedAverageAccuracy + HarmonicMeanAccuracy)/2
 $$
 
 Where `Weighted Average Accuracy` is weighted by the standard deviation over a smoothing window (they those a window of 10 in the Lichess code). 
