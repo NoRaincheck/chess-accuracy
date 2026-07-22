@@ -7,10 +7,9 @@ import chess.pgn
 from tqdm import tqdm
 
 from chess_accuracy import (
-    win_percentage_from_white_cp,
     game_accuracy,
     phase_accuracy,
-    heuristic_division,
+    faithful_division,
 )
 
 engine = chess.engine.SimpleEngine.popen_uci(Path("bin/stockfish/stockfish"))
@@ -24,6 +23,7 @@ def annotate_game(pgn_path):
     annotated.setup(game.board())
     annotated_node = None
     white_pov_cps = []
+    boards = [game.board().copy()]
 
     for move in tqdm(game.mainline_moves()):
         annotated_node = (
@@ -32,7 +32,9 @@ def annotate_game(pgn_path):
             else annotated_node.add_variation(move)
         )
         game = game.next()
-        info = engine.analyse(game.board(), chess.engine.Limit(**engine_limit_config))
+        board = game.board().copy()
+        boards.append(board)
+        info = engine.analyse(board, chess.engine.Limit(**engine_limit_config))
         score = info["score"]
         cp = score.white().score()
         if cp is None:
@@ -40,7 +42,7 @@ def annotate_game(pgn_path):
         white_pov_cps.append(cp)
         annotated_node.set_eval(score)
 
-    return annotated, white_pov_cps
+    return annotated, white_pov_cps, boards
 
 
 def format_acc(label, w, b):
@@ -48,11 +50,13 @@ def format_acc(label, w, b):
 
 
 pgn_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("example2.pgn")
-annotated_game, white_pov_cps = annotate_game(pgn_path)
+annotated_game, white_pov_cps, boards = annotate_game(pgn_path)
 
-division = heuristic_division(len(white_pov_cps))
-print(f"Division: opening {division.middle} plies, "
-      f"endgame from ply {division.end}")
+division = faithful_division(boards)
+middle_str = str(division.middle) if division.middle is not None else "None"
+end_str = str(division.end) if division.end is not None else "None"
+print(f"Division: opening {middle_str} plies, "
+      f"endgame from ply {end_str}")
 
 game_w, game_b = game_accuracy(white_pov_cps)
 print(format_acc("Game", game_w, game_b))
