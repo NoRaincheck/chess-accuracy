@@ -77,8 +77,8 @@ uv run calculate_accuracy_faithful.py
 
 ```sh
 Division: opening 25 plies, endgame from ply 47
-Game: W 97.92%  B 99.22%
-  Opening     : W 100.00%  B 100.00%
-  Middlegame  : W 98.76%  B 98.70%
-  Endgame     : W 87.91%  B 98.19%
+Game: W 91.71%  B 97.61%
+  Opening     : W 94.43%  B 93.68%
+  Middlegame  : W 90.04%  B 100.00%
+  Endgame     : W 93.24%  B 97.30%
 ```
