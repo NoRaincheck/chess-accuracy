@@ -1,0 +1,23 @@
+[Event "rated blitz game"]
+[Date "2025.01.31"]
+[Round "-"]
+[White "GoNoobs"]
+[Black "JustAnotherNoob"]
+[Result "0-1"]
+[GameId "1nz52IF4"]
+[UTCDate "2025.01.31"]
+[UTCTime "11:37:21"]
+[WhiteElo "771"]
+[BlackElo "790"]
+[WhiteRatingDiff "-5"]
+[BlackRatingDiff "+58"]
+[Variant "Standard"]
+[TimeControl "300+0"]
+[ECO "C44"]
+[Opening "Scotch Game"]
+[Termination "Normal"]
+[Annotator "lichess.org"]
+
+1. e4 { [%clk 0:05:00] } 1... e5 { [%clk 0:05:00] } 2. Nf3 { [%clk 0:04:57] } 2... Nc6 { [%clk 0:04:59] } 3. d4 { [%clk 0:04:50] } { C44 Scotch Game } 3... d6 { [%clk 0:04:51] } 4. d5 { [%clk 0:04:45] } 4... Nce7 { [%clk 0:04:48] } 5. Nc3 { [%clk 0:04:41] } 5... Bg4 { [%clk 0:04:45] } 6. Bb5+ { [%clk 0:04:39] } 6... c6 { [%clk 0:04:42] } 7. Be2 { [%clk 0:04:38] } 7... cxd5 { [%clk 0:04:27] } 8. exd5 { [%clk 0:04:35] } 8... Qb6 { [%clk 0:04:07] } 9. Be3 { [%clk 0:04:31] } 9... Qxb2 { [%clk 0:04:02] } 10. Rb1 { [%clk 0:04:29] } 10... Qxc3+ { [%clk 0:03:55] } 11. Qd2 { [%clk 0:04:24] } 11... Qxd2+ { [%clk 0:03:36] } 12. Nxd2 { [%clk 0:04:21] } 12... Bxe2 { [%clk 0:03:34] } 13. Kxe2 { [%clk 0:04:19] } 13... O-O-O { [%clk 0:03:31] } 14. c4 { [%clk 0:04:13] } 14... Nf6 { [%clk 0:03:27] } 15. c5 { [%clk 0:04:12] } 15... dxc5 { [%clk 0:03:24] } 16. Bxc5 { [%clk 0:04:10] } 16... Nexd5 { [%clk 0:03:19] } 17. Bxa7 { [%clk 0:04:07] } 17... Nc3+ { [%clk 0:03:08] } 18. Ke3 { [%clk 0:04:02] } 18... Nxb1 { [%clk 0:03:06] } 19. Rxb1 { [%clk 0:04:01] } 19... Bd6 { [%clk 0:02:55] } 20. Rc1+ { [%clk 0:03:59] } 20... Bc7 { [%clk 0:02:53] } 21. Ne4 { [%clk 0:03:55] } 21... Nxe4 { [%clk 0:02:51] } 22. Kxe4 { [%clk 0:03:54] } 22... f6 { [%clk 0:02:44] } 23. a4 { [%clk 0:03:51] } 23... Kd7 { [%clk 0:02:41] } 24. a5 { [%clk 0:03:50] } 24... Bxa5 { [%clk 0:02:39] } 25. Rd1+ { [%clk 0:03:47] } 25... Ke7 { [%clk 0:02:38] } 26. Bc5+ { [%clk 0:03:44] } 26... Ke6 { [%clk 0:02:35] } 27. Ra1 { [%clk 0:03:32] } 27... Bc3 { [%clk 0:02:26] } 28. Ra7 { [%clk 0:03:27] } 28... f5+ { [%clk 0:02:13] } 29. Ke3 { [%clk 0:03:21] } 29... Bd4+ { [%clk 0:02:08] } 30. Bxd4 { [%clk 0:03:17] } 30... exd4+ { [%clk 0:02:07] } 31. Kd3 { [%clk 0:03:15] } 31... Rd7 { [%clk 0:01:54] } 32. Ra4 { [%clk 0:03:12] } 32... Rc8 { [%clk 0:01:51] } 33. Ra3 { [%clk 0:03:07] } 33... Rc3+ { [%clk 0:01:48] } 34. Rxc3 { [%clk 0:03:02] } 34... dxc3+ { [%clk 0:01:46] } 35. Kxc3 { [%clk 0:03:01] } 35... Rc7+ { [%clk 0:01:43] } 36. Kd3 { [%clk 0:02:59] } 36... b5 { [%clk 0:01:43] } 37. g4 { [%clk 0:02:52] } 37... fxg4 { [%clk 0:01:41] } 38. f4 { [%clk 0:02:50] } 38... gxf3 { [%clk 0:01:39] } { White resigns. } 0-1
+
+
