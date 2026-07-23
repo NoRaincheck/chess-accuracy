@@ -128,24 +128,29 @@ def get_maia3_stats(pgn_text, elo, sample_indices=None):
     return rate
 
 
-def ternary_search_elo(pgn_text, elo_lo, elo_hi, fidelity=FIDELITY, sample_indices=None):
+def ternary_search_elo(
+    pgn_text, elo_lo, elo_hi, fidelity=FIDELITY, sample_indices=None
+):
     """Ternary search for ELO with highest match rate.
 
-    Narrows [lo, hi] by evaluating at two interior points each iteration,
-    discarding the third that cannot contain the peak. Stops when the
-    interval is <= fidelity wide.
+    Each iteration evaluates two interior points, discards the third that
+    cannot contain the peak, shrinking the range by 2/3. The total number
+    of rounds is precomputed from the initial range and target fidelity.
     """
     lo, hi = elo_lo, elo_hi
     total_evals = 0
+    n_rounds = (
+        math.ceil(math.log((hi - lo) / fidelity) / math.log(1.5)) if hi > lo else 0
+    )
 
-    while hi - lo > fidelity:
+    pbar = tqdm(range(n_rounds), desc="Ternary search")
+    for _ in pbar:
+        pbar.set_description(f"Ternary search ({lo}-{hi} ELO)")
         m1 = lo + (hi - lo) // 3
         m2 = hi - (hi - lo) // 3
-
         if m1 == m2:
             break
 
-        tqdm.write(f"Ternary search: [{lo}, {hi}] (evaluating {m1}, {m2})")
         r1 = get_maia3_stats(pgn_text, m1, sample_indices)
         r2 = get_maia3_stats(pgn_text, m2, sample_indices)
         total_evals += 2
@@ -155,17 +160,9 @@ def ternary_search_elo(pgn_text, elo_lo, elo_hi, fidelity=FIDELITY, sample_indic
         else:
             hi = m2
 
-    # Evaluate the final interval to find the best point
-    best_elo = lo
-    best_rate = get_maia3_stats(pgn_text, lo, sample_indices)
+    best_elo = (lo + hi) // 2
+    best_rate = get_maia3_stats(pgn_text, best_elo, sample_indices)
     total_evals += 1
-
-    for elo in range(lo + 1, hi + 1):
-        rate = get_maia3_stats(pgn_text, elo, sample_indices)
-        total_evals += 1
-        if rate > best_rate:
-            best_rate = rate
-            best_elo = elo
 
     tqdm.write(
         f"Search complete: best ELO = {best_elo} (rate = {best_rate:.4f}), {total_evals} evaluations"
@@ -211,7 +208,9 @@ def estimate(pgn_path, n_sample=0):
     sample_indices = None
     if n_sample > 0:
         sample_indices = _select_sample_indices(total_moves, n_sample)
-        print(f"Sampling {len(sample_indices)} of {total_moves} moves (heuristic selection)")
+        print(
+            f"Sampling {len(sample_indices)} of {total_moves} moves (heuristic selection)"
+        )
 
     # Use calibrated scan params if available
     scan = config["scan"] if config else DEFAULT_SCAN
