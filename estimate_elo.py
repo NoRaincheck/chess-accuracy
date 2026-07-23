@@ -129,7 +129,7 @@ def get_maia3_stats(pgn_text, elo, sample_indices=None):
 
 
 def ternary_search_elo(
-    pgn_text, elo_lo, elo_hi, fidelity=FIDELITY, sample_indices=None
+    pgn_text, elo_lo, elo_hi, fidelity=FIDELITY, sample_indices=None, json_mode=False
 ):
     """Ternary search for ELO with highest match rate.
 
@@ -164,10 +164,11 @@ def ternary_search_elo(
     best_rate = get_maia3_stats(pgn_text, best_elo, sample_indices)
     total_evals += 1
 
-    tqdm.write(
-        f"Search complete: best ELO = {best_elo} (rate = {best_rate:.4f}), {total_evals} evaluations"
-    )
-    return float(best_elo), best_rate
+    if not json_mode:
+        tqdm.write(
+            f"Search complete: best ELO = {best_elo} (rate = {best_rate:.4f}), {total_evals} evaluations"
+        )
+    return float(best_elo), best_rate, total_evals
 
 
 def load_config():
@@ -177,17 +178,7 @@ def load_config():
     return None
 
 
-def apply_correction(raw_elo, config):
-    """Apply calibration correction to raw estimate via piecewise linear interpolation."""
-    if config is None or "correction" not in config:
-        return raw_elo
-    correction = config["correction"]
-    raw_elos = [c["raw_elo"] for c in correction]
-    actual_elos = [c["actual_elo"] for c in correction]
-    return float(np.interp(raw_elo, raw_elos, actual_elos))
-
-
-def estimate(pgn_path, n_sample=0):
+def estimate(pgn_path, n_sample=0, json_mode=False):
     """Estimate ELO for a game.
 
     If n_sample > 0, only evaluate that many moves (heuristically selected)
@@ -208,47 +199,61 @@ def estimate(pgn_path, n_sample=0):
     sample_indices = None
     if n_sample > 0:
         sample_indices = _select_sample_indices(total_moves, n_sample)
-        print(
-            f"Sampling {len(sample_indices)} of {total_moves} moves (heuristic selection)"
-        )
+        if not json_mode:
+            print(
+                f"Sampling {len(sample_indices)} of {total_moves} moves (heuristic selection)"
+            )
 
     # Use calibrated scan params if available
     scan = config["scan"] if config else DEFAULT_SCAN
 
-    raw_elo, peak_rate = ternary_search_elo(
-        pgn_text, scan["elo_lo"], scan["elo_hi"], sample_indices=sample_indices
+    raw_elo, peak_rate, n_evals = ternary_search_elo(
+        pgn_text,
+        scan["elo_lo"],
+        scan["elo_hi"],
+        sample_indices=sample_indices,
+        json_mode=json_mode,
     )
-    corrected_elo = apply_correction(raw_elo, config)
+    if not json_mode:
+        print()
+        print(f"Game: {white_name} vs {black_name}")
+        print(f"WhiteElo: {white_elo_hdr}, BlackElo: {black_elo_hdr}")
+        print()
 
-    print()
-    print(f"Game: {white_name} vs {black_name}")
-    print(f"WhiteElo: {white_elo_hdr}, BlackElo: {black_elo_hdr}")
-    print()
+        if config:
+            print(
+                f"Raw estimate:        {raw_elo:6.0f}  (peak rate {peak_rate * 100:.1f}%)"
+            )
+        else:
+            print(
+                f"Maia3 estimate:      {raw_elo:6.0f}  (peak rate {peak_rate * 100:.1f}%)"
+            )
 
-    if config:
-        print(
-            f"Raw estimate:        {raw_elo:6.0f}  (peak rate {peak_rate * 100:.1f}%)"
-        )
-        print(f"Calibrated estimate: {corrected_elo:6.0f}")
-    else:
-        print(
-            f"Maia3 estimate:      {raw_elo:6.0f}  (peak rate {peak_rate * 100:.1f}%)"
-        )
+        print(f"PGN reference:       W {white_elo_hdr:>6s}   B {black_elo_hdr:>6s}")
 
-    print(f"PGN reference:       W {white_elo_hdr:>6s}   B {black_elo_hdr:>6s}")
+        print()
+        if n_sample > 0:
+            print("Method: maia3 is queried at each ELO level. A heuristic sample")
+            print("of middlegame positions is used for faster estimation.")
+        else:
+            print("Method: maia3 is queried at each ELO level. For every position")
+            print("in the game, we check whether the human's top-1 move matches")
+            print("the engine's top-1 move.")
+        print("A ternary search narrows the ELO range to the peak match rate")
+        print("(fidelity ±50 ELO).")
+        if config:
+            print("Calibration correction applied from estimate_elo.json.")
 
-    print()
-    if n_sample > 0:
-        print("Method: maia3 is queried at each ELO level. A heuristic sample")
-        print("of middlegame positions is used for faster estimation.")
-    else:
-        print("Method: maia3 is queried at each ELO level. For every position")
-        print("in the game, we check whether the human's top-1 move matches")
-        print("the engine's top-1 move.")
-    print("A ternary search narrows the ELO range to the peak match rate")
-    print("(fidelity ±50 ELO).")
-    if config:
-        print("Calibration correction applied from estimate_elo.json.")
+    return {
+        "white": white_name,
+        "black": black_name,
+        "white_elo_hdr": white_elo_hdr,
+        "black_elo_hdr": black_elo_hdr,
+        "raw_elo": round(raw_elo, 1),
+        "peak_rate": round(peak_rate, 4),
+        "n_evaluations": n_evals,
+        "sampled": n_sample > 0,
+    }
 
 
 def main():
@@ -268,10 +273,18 @@ def main():
         metavar="N",
         help="Sample N positions heuristically (middlegame-weighted) instead of evaluating all moves",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output results as JSON to stdout",
+    )
     args = parser.parse_args()
 
     pgn_path = Path(args.pgn) if args.pgn else Path("example2.pgn")
-    estimate(pgn_path, n_sample=args.sample)
+    result = estimate(pgn_path, n_sample=args.sample, json_mode=args.json)
+
+    if args.json:
+        print(json.dumps(result))
 
 
 if __name__ == "__main__":
