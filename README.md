@@ -82,3 +82,22 @@ Game: W 91.71%  B 97.61%
   Middlegame  : W 90.04%  B 100.00%
   Endgame     : W 93.24%  B 97.30%
 ```
+
+Estimating ELO:
+
+```sh
+uv run estimate_elo.py example2.pgn --sample 30
+```
+
+```sh
+Game: Hikaru vs DanielNaroditsky
+WhiteElo: 3225, BlackElo: 3151
+
+Maia3 estimate:        2480  (peak rate 56.7%)
+PGN reference:       W   3225   B   3151
+
+Method: maia3 is queried at each ELO level. A heuristic sample
+of middlegame positions is used for faster estimation.
+A ternary search narrows the ELO range to the peak match rate
+(fidelity ±50 ELO).
+```
