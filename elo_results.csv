@@ -1,0 +1,13 @@
+game_file,white,black,white_elo_hdr,black_elo_hdr,raw_elo,corrected_elo,peak_rate,n_evaluations,sampled,diff_from_mean
+"robis vs viwi","robis","viwi","1362","1170","1440.0","1440.0","0.5593","23","false","-230.83333333333326"
+"vertical8 vs hansk","vertical8","hansk","1248","1190","1686.0","1686.0","0.6667","23","false","15.166666666666742"
+"alecster vs snoon","alecster","snoon","1157","1240","643.0","643.0","0.382","23","false","-1027.8333333333333"
+"lugalbanda vs Amilcar_Hdez1","lugalbanda","Amilcar_Hdez1","1842","1857","2206.0","2206.0","0.7288","23","false","535.1666666666667"
+"DET-UA vs Dr_King_Schultz","DET-UA","Dr_King_Schultz","1721","1725","2015.0","2015.0","0.5161","23","false","344.16666666666674"
+"Pitrinu vs Lewissoft","Pitrinu","Lewissoft","2063","1821","1468.0","1468.0","0.5802","23","false","-202.83333333333326"
+"NevSky vs xmodey","NevSky","xmodey","2367","2245","2414.0","2414.0","0.7222","23","false","743.1666666666667"
+"xmodey vs NevSky","xmodey","NevSky","2259","2351","1778.0","1778.0","0.609","23","false","107.16666666666674"
+"Tvivelaktig vs Bikfoot","Tvivelaktig","Bikfoot","2152","2276","2192.0","2192.0","0.5897","23","false","521.1666666666667"
+"tigresa1 vs bballbrett5","tigresa1","bballbrett5","889","990","729.0","729.0","0.4265","23","false","-941.8333333333333"
+"misha-t vs cellus5000","misha-t","cellus5000","970","871","2335.0","2335.0","0.4906","23","false","664.1666666666667"
+"cellus5000 vs kybla2","cellus5000","kybla2","891","938","1144.0","1144.0","0.3452","23","false","-526.8333333333333"
