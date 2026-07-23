@@ -90,18 +90,24 @@ Game: W 91.71%  B 97.61%
 Estimates the ELO rating of a chess engine (e.g., Maia) by comparing its move choices against a known PGN game. It uses a ternary search over the ELO range, evaluating how well the engine's play matches the game's actual moves at each rating level. A heuristic sample of middlegame positions is used for faster estimation.
 
 ```sh
-uv run estimate_elo.py example2.pgn --sample 30
+uv run estimate_elo.py example2.pgn
 ```
 
 ```sh
+Loading maia3 ONNX model (maia3-5m)...
+Stage 1: 1D sweep (55 values, step=50)...
+  -> 1D estimate: 2700 (rate=0.6207)
+Round 1: 2D refinement (8x8, margin=±1350, step=386)...
+  -> best: W=3000, B=2764 (rate=0.6379)
+Round 2: 2D refinement (8x8, margin=±675, step=193)...
+  -> best: W=2904, B=2610 (rate=0.6379)
+Round 3: 2D refinement (8x8, margin=±337, step=96)...
+  -> best: W=2876, B=2658 (rate=0.6379)
+Final: W=2876, B=2658 (rate=0.6379)
+
 Game: Hikaru vs DanielNaroditsky
 WhiteElo: 3225, BlackElo: 3151
 
-Maia3 estimate:        2480  (peak rate 56.7%)
-PGN reference:       W   3225   B   3151
-
-Method: maia3 is queried at each ELO level. A heuristic sample
-of middlegame positions is used for faster estimation.
-A ternary search narrows the ELO range to the peak match rate
-(fidelity ±50 ELO).
+Estimated:  W   2876   B   2658  (rate 63.8%)
+PGN ref:    W   3225   B   3151
 ```
