@@ -44,6 +44,8 @@ The repo bundles [Stockfish](https://stockfishchess.org/) for portability, but w
 
 ## Example
 
+The example script calculates move-by-move and game-level accuracy for a sample PGN game using Stockfish as the evaluation engine. It demonstrates both the heuristic phase division (fixed ply boundaries) and the faithful Lichess Divider algorithm.
+
 ```sh
 uv run calculate_accuracy.py
 ```
@@ -83,7 +85,9 @@ Game: W 91.71%  B 97.61%
   Endgame     : W 93.24%  B 97.30%
 ```
 
-Estimating ELO:
+### Estimating ELO
+
+Estimates the ELO rating of a chess engine (e.g., Maia) by comparing its move choices against a known PGN game. It uses a ternary search over the ELO range, evaluating how well the engine's play matches the game's actual moves at each rating level. A heuristic sample of middlegame positions is used for faster estimation.
 
 ```sh
 uv run estimate_elo.py example2.pgn --sample 30
