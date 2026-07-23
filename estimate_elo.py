@@ -3,189 +3,109 @@
 Estimate chess player ELO from game moves using maia3.
 
 Usage:
-    python estimate_elo.py game.pgn          # estimate ELO (uses calibration if available)
-    python estimate_elo.py --calibrate       # calibrate against data/ directory
+    python estimate_elo.py game.pgn              # 2D sweep (white & black ELO)
+    python estimate_elo.py game.pgn --1d         # 1D sweep (same ELO for both)
 """
 
 import argparse
 import json
 import io
 import math
-import os
-import random
-import subprocess
 from pathlib import Path
 
 import chess
-import chess.engine
 import chess.pgn
 import numpy as np
 from tqdm import tqdm
-
-# Force maia3-uci to use local HuggingFace cache only (no network checks)
-_MAIA_ENV = {**os.environ, "HF_HUB_OFFLINE": "1"}
-
 
 CONFIG_PATH = Path(__file__).parent / "estimate_elo.json"
 DATA_DIR = Path(__file__).parent / "data"
 
 DEFAULT_SCAN = {"elo_lo": 300, "elo_hi": 3500}
-BASE_MODEL = "maia3-5m"  # one of "maia3-79m, maia3-23m, maia3-5m"
 FIDELITY = 50
 
-# Cache for ELO evaluations: maps (pgn_hash, elo) -> match_rate
-_eval_cache: dict[tuple[int, int], float] = {}
+MIN_ELO = 300
+MAX_ELO = 3000
 
 
-def _pgn_hash(pgn_text: str) -> int:
-    return hash(pgn_text)
-
-
-def _select_sample_indices(total_moves, n_sample):
-    """Select move indices to evaluate, preferring middlegame positions.
-
-    Heuristics:
-      - Skip first ~8 moves (opening book, memorized, not discriminating)
-      - Skip last ~5 moves (game often decided, resignation/mate)
-      - Weight remaining moves by a bell curve centered on the middlegame
-      - Sample n_sample moves weighted by that distribution
-    """
-    if n_sample <= 0 or n_sample >= total_moves:
-        return list(range(total_moves))
-
-    skip_open = min(8, total_moves // 6)
-    skip_end = min(5, total_moves // 8)
-    lo, hi = skip_open, total_moves - skip_end
-    if hi - lo <= n_sample:
-        return list(range(lo, hi))
-
-    # Bell-curve weight centered at the middlegame (roughly 40% into the game)
-    center = lo + (hi - lo) * 0.4
-    spread = (hi - lo) / 3.0
-    candidates = list(range(lo, hi))
-    weights = [math.exp(-0.5 * ((i - center) / spread) ** 2) for i in candidates]
-
-    # Weighted random sample without replacement
-    chosen = []
-    remaining = list(range(len(candidates)))
-    for _ in range(n_sample):
-        w_sum = sum(weights[i] for i in remaining)
-        r = random.random() * w_sum
-        cumul = 0.0
-        for idx in remaining:
-            cumul += weights[idx]
-            if cumul >= r:
-                chosen.append(candidates[idx])
-                remaining.remove(idx)
-                break
-
-    return sorted(chosen)
-
-
-def get_maia3_stats(pgn_text, elo, sample_indices=None):
-    """Query maia3 at a given ELO, return match rate. Cached by (pgn, elo).
-
-    If sample_indices is provided, only evaluate those moves.
-    """
-    key = (_pgn_hash(pgn_text), elo)
-    if key in _eval_cache:
-        return _eval_cache[key]
-
-    game = chess.pgn.read_game(io.StringIO(pgn_text))
-    board = game.board()
-
-    eng = chess.engine.SimpleEngine.popen_uci(
-        [
-            "maia3-uci",
-            "--model",
-            "maia3-79m",
-            "--elo",
-            str(elo),
-        ],
-        env=_MAIA_ENV,
-        stderr=subprocess.DEVNULL,
+# ── Iterative refinement: 1D sweep → repeated 2D narrowing ───────────────────
+def _batch_estimate_2d(pgn_text, scan, model_name):
+    """Estimate ELO with iterative 2D refinement until grid step < FIDELITY."""
+    from chess_accuracy.batch_inference import (
+        load_inference_engine,
+        estimate_elo_batch,
+        estimate_elo_2d,
     )
 
-    moves = list(game.mainline_moves())
-    sample_set = set(sample_indices) if sample_indices is not None else None
+    elo_lo, elo_hi = scan["elo_lo"], scan["elo_hi"]
+    elo_lo = max(elo_lo, MIN_ELO)
+    elo_hi = min(elo_hi, MAX_ELO)
 
-    top1 = 0
-    n = 0
-    for i, move in enumerate(moves):
-        if sample_set is not None and i not in sample_set:
-            board.push(move)
-            continue
-        info = eng.analyse(board, chess.engine.Limit(nodes=1))
-        pv = info.get("pv", [])
-        if pv and pv[0] == move:
-            top1 += 1
-        board.push(move)
-        n += 1
+    print(f"Loading maia3 ONNX model ({model_name})...")
+    inf_engine = load_inference_engine(model_name)
 
-    eng.quit()
-    rate = top1 / n if n > 0 else 0.0
-    _eval_cache[key] = rate
-    return rate
-
-
-def ternary_search_elo(
-    pgn_text, elo_lo, elo_hi, fidelity=FIDELITY, sample_indices=None, json_mode=False
-):
-    """Ternary search for ELO with highest match rate.
-
-    Each iteration evaluates two interior points, discards the third that
-    cannot contain the peak, shrinking the range by 2/3. The total number
-    of rounds is precomputed from the initial range and target fidelity.
-    """
-    lo, hi = elo_lo, elo_hi
-    total_evals = 0
-    n_rounds = (
-        math.ceil(math.log((hi - lo) / fidelity) / math.log(1.5)) if hi > lo else 0
+    # Stage 1: 1D sweep to get initial estimate
+    elo_values = np.arange(elo_lo, elo_hi + 1, FIDELITY, dtype=np.float32)
+    n_grid = len(elo_values)
+    print(f"Stage 1: 1D sweep ({n_grid} values, step={FIDELITY})...")
+    best_elo, best_rate, _ = estimate_elo_batch(
+        pgn_text, elo_values, inf_engine, model_name=model_name
     )
+    print(f"  -> 1D estimate: {best_elo:.0f} (rate={best_rate:.4f})")
 
-    pbar = tqdm(range(n_rounds), desc="Ternary search")
-    for _ in pbar:
-        pbar.set_description(f"Ternary search ({lo}-{hi} ELO)")
-        m1 = lo + (hi - lo) // 3
-        m2 = hi - (hi - lo) // 3
-        if m1 == m2:
+    n_evals = n_grid
+    best_w, best_b, best_rate = best_elo, best_elo, best_rate
+
+    # Stage 2: iterative 2D refinement
+    margin = (elo_hi - elo_lo) // 2  # start with full range
+    n_axis = int(
+        math.ceil(math.sqrt(n_grid))
+    )  # values per axis, total ≈ n_grid per round
+    round_num = 0
+
+    while True:
+        step = (margin * 2) / max(n_axis - 1, 1)
+        if step < FIDELITY:
             break
 
-        r1 = get_maia3_stats(pgn_text, m1, sample_indices)
-        r2 = get_maia3_stats(pgn_text, m2, sample_indices)
-        total_evals += 2
+        round_num += 1
+        w_lo = max(elo_lo, best_w - margin)
+        w_hi = min(elo_hi, best_w + margin)
+        b_lo = max(elo_lo, best_b - margin)
+        b_hi = min(elo_hi, best_b + margin)
 
-        if r1 < r2:
-            lo = m1
-        else:
-            hi = m2
+        white_elos = np.linspace(w_lo, w_hi, n_axis, dtype=np.float32)
+        black_elos = np.linspace(b_lo, b_hi, n_axis, dtype=np.float32)
 
-    best_elo = (lo + hi) // 2
-    best_rate = get_maia3_stats(pgn_text, best_elo, sample_indices)
-    total_evals += 1
-
-    if not json_mode:
-        tqdm.write(
-            f"Search complete: best ELO = {best_elo} (rate = {best_rate:.4f}), {total_evals} evaluations"
+        print(
+            f"Round {round_num}: 2D refinement "
+            f"({n_axis}x{n_axis}, margin=±{margin:.0f}, step={step:.0f})..."
         )
-    return float(best_elo), best_rate, total_evals
+
+        best_w, best_b, best_rate, _ = estimate_elo_2d(
+            pgn_text,
+            white_elos,
+            black_elos,
+            inf_engine,
+            model_name=model_name,
+        )
+        n_evals += n_axis * n_axis
+
+        tqdm.write(f"  -> best: W={best_w:.0f}, B={best_b:.0f} (rate={best_rate:.4f})")
+
+        margin = int(margin / 2)
+
+    tqdm.write(f"Final: W={best_w:.0f}, B={best_b:.0f} (rate={best_rate:.4f})")
+
+    return best_w, best_b, best_rate, n_evals
 
 
-def load_config():
-    """Load calibration config."""
-    if CONFIG_PATH.exists():
-        return json.loads(CONFIG_PATH.read_text())
-    return None
-
-
-def estimate(pgn_path, n_sample=0, json_mode=False):
-    """Estimate ELO for a game.
-
-    If n_sample > 0, only evaluate that many moves (heuristically selected)
-    instead of the full game.
-    """
-    config = load_config()
-
+def estimate(
+    pgn_path,
+    n_sample=0,
+    model_name="maia3-5m",
+):
+    """Estimate ELO for a game."""
     pgn_text = pgn_path.read_text()
     game = chess.pgn.read_game(io.StringIO(pgn_text))
 
@@ -194,62 +114,30 @@ def estimate(pgn_path, n_sample=0, json_mode=False):
     white_elo_hdr = game.headers.get("WhiteElo", "?")
     black_elo_hdr = game.headers.get("BlackElo", "?")
 
-    # Build sample indices if requested
     total_moves = sum(1 for _ in game.mainline_moves())
-    sample_indices = None
-    if n_sample > 0:
-        sample_indices = _select_sample_indices(total_moves, n_sample)
-        if not json_mode:
-            print(
-                f"Sampling {len(sample_indices)} of {total_moves} moves (heuristic selection)"
-            )
-
-    # Use calibrated scan params if available
-    scan = config["scan"] if config else DEFAULT_SCAN
-
-    raw_elo, peak_rate, n_evals = ternary_search_elo(
+    est_white, est_black, peak_rate, n_evals = _batch_estimate_2d(
         pgn_text,
-        scan["elo_lo"],
-        scan["elo_hi"],
-        sample_indices=sample_indices,
-        json_mode=json_mode,
+        {"elo_lo": MIN_ELO, "elo_hi": MAX_ELO},
+        model_name,
     )
-    if not json_mode:
-        print()
-        print(f"Game: {white_name} vs {black_name}")
-        print(f"WhiteElo: {white_elo_hdr}, BlackElo: {black_elo_hdr}")
-        print()
 
-        if config:
-            print(
-                f"Raw estimate:        {raw_elo:6.0f}  (peak rate {peak_rate * 100:.1f}%)"
-            )
-        else:
-            print(
-                f"Maia3 estimate:      {raw_elo:6.0f}  (peak rate {peak_rate * 100:.1f}%)"
-            )
-
-        print(f"PGN reference:       W {white_elo_hdr:>6s}   B {black_elo_hdr:>6s}")
-
-        print()
-        if n_sample > 0:
-            print("Method: maia3 is queried at each ELO level. A heuristic sample")
-            print("of middlegame positions is used for faster estimation.")
-        else:
-            print("Method: maia3 is queried at each ELO level. For every position")
-            print("in the game, we check whether the human's top-1 move matches")
-            print("the engine's top-1 move.")
-        print("A ternary search narrows the ELO range to the peak match rate")
-        print("(fidelity ±50 ELO).")
-        if config:
-            print("Calibration correction applied from estimate_elo.json.")
+    print()
+    print(f"Game: {white_name} vs {black_name}")
+    print(f"WhiteElo: {white_elo_hdr}, BlackElo: {black_elo_hdr}")
+    print()
+    print(
+        f"Estimated:  W {est_white:6.0f}   B {est_black:6.0f}  (rate {peak_rate * 100:.1f}%)"
+    )
+    print(f"PGN ref:    W {white_elo_hdr:>6s}   B {black_elo_hdr:>6s}")
+    print()
 
     return {
         "white": white_name,
         "black": black_name,
         "white_elo_hdr": white_elo_hdr,
         "black_elo_hdr": black_elo_hdr,
-        "raw_elo": round(raw_elo, 1),
+        "est_white_elo": round(est_white, 1),
+        "est_black_elo": round(est_black, 1),
         "peak_rate": round(peak_rate, 4),
         "n_evaluations": n_evals,
         "sampled": n_sample > 0,
@@ -262,29 +150,34 @@ def main():
     )
     parser.add_argument("pgn", nargs="?", help="PGN file to estimate")
     parser.add_argument(
-        "--calibrate",
-        action="store_true",
-        help="Calibrate against data/ directory and save to estimate_elo.json",
+        "--calibrate", action="store_true", help="Calibrate against data/ directory"
     )
     parser.add_argument(
         "--sample",
         type=int,
         default=0,
         metavar="N",
-        help="Sample N positions heuristically (middlegame-weighted) instead of evaluating all moves",
+        help="Sample N positions heuristically",
     )
     parser.add_argument(
-        "--json",
+        "--model",
+        default="maia3-5m",
+        help="Maia3 model: maia3-5m, maia3-23m, maia3-79m",
+    )
+    parser.add_argument(
+        "--1d",
+        dest="mode_1d",
         action="store_true",
-        help="Output results as JSON to stdout",
+        help="1D sweep (same ELO for both players)",
     )
     args = parser.parse_args()
 
     pgn_path = Path(args.pgn) if args.pgn else Path("example2.pgn")
-    result = estimate(pgn_path, n_sample=args.sample, json_mode=args.json)
-
-    if args.json:
-        print(json.dumps(result))
+    result = estimate(
+        pgn_path,
+        n_sample=args.sample,
+        model_name=args.model,
+    )
 
 
 if __name__ == "__main__":
