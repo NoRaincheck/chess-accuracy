@@ -3,7 +3,7 @@
 Estimate chess player ELO from game moves using maia3.
 
 Stage 1: 1D sweep assuming both players have the same ELO.
-Stage 2: Two separate 1D sweeps (one per color), opponent fixed at 1500.
+Stage 2: Two separate 1D sweeps (one per color), opponent fixed at the ELO in stage 1.
 
 Usage:
     python estimate_elo_separate.py game.pgn
@@ -26,10 +26,19 @@ FIDELITY = 50
 MIN_ELO = 300
 MAX_ELO = 3000
 
-OPPONENT_ELO = 1500
+
+def roundup(x):
+    return int(math.ceil(x / 100.0)) * 100
 
 
-def _build_single_color_tensors(positions, elo_values, cfg, color_is_white, n_sample=0):
+def rounddown(x):
+    return int(math.floor(x / 100.0)) * 100
+
+
+
+def _build_single_color_tensors(
+    positions, elo_values, cfg, color_is_white, n_sample=0, opponent_elo=1500
+):
     """Build batch tensors for one color's positions only.
 
     For each position of the target color, evaluates all candidate ELO values
@@ -49,7 +58,9 @@ def _build_single_color_tensors(positions, elo_values, cfg, color_is_white, n_sa
     n_elo = len(elo_values)
 
     # Filter positions to target color
-    color_positions = [pos for pos in positions if pos["is_white_turn"] == color_is_white]
+    color_positions = [
+        pos for pos in positions if pos["is_white_turn"] == color_is_white
+    ]
 
     if not color_positions:
         return {
@@ -94,8 +105,10 @@ def _build_single_color_tensors(positions, elo_values, cfg, color_is_white, n_sa
         if pos_idx in target_indices:
             if target_seen in sample_indices:
                 hist_tokens = get_historical_tokens(
-                    history, cfg,
-                    base=300.0, inc=0.0,
+                    history,
+                    cfg,
+                    base=300.0,
+                    inc=0.0,
                     clk_left_before=pos["clk_left_before"],
                     clk_ponder=pos["clk_ponder"],
                 )
@@ -123,13 +136,13 @@ def _build_single_color_tensors(positions, elo_values, cfg, color_is_white, n_sa
     legal_masks = torch.stack(all_legal_masks, dim=0)
 
     if not cfg.include_time_info:
-        tokens_n = tokens_n[:, :, :12 * cfg.history]
+        tokens_n = tokens_n[:, :, : 12 * cfg.history]
 
     tokens_batch = tokens_n.repeat_interleave(n_elo, dim=0)
 
     elo_t = torch.tensor(elo_values, dtype=torch.float32)
     self_elos = elo_t.repeat(sampled_count)
-    oppo_elos = torch.full_like(self_elos, OPPONENT_ELO)
+    oppo_elos = torch.full_like(self_elos, opponent_elo)
 
     return {
         "tokens": tokens_batch,
@@ -142,7 +155,9 @@ def _build_single_color_tensors(positions, elo_values, cfg, color_is_white, n_sa
     }
 
 
-def _batch_estimate_single_color(pgn_text, elo_values, inf_engine, cfg, color_is_white, model_name):
+def _batch_estimate_single_color(
+    pgn_text, elo_values, inf_engine, cfg, color_is_white, model_name, opponent_elo=1500
+):
     """Run 1D ELO sweep for a single color, opponent fixed at 1500."""
     from chess_accuracy.pgn_parser import parse_pgn_to_positions
 
@@ -150,7 +165,9 @@ def _batch_estimate_single_color(pgn_text, elo_values, inf_engine, cfg, color_is
     if not positions:
         return 0.0, 0.0, np.zeros(len(elo_values))
 
-    batch = _build_single_color_tensors(positions, elo_values, cfg, color_is_white)
+    batch = _build_single_color_tensors(
+        positions, elo_values, cfg, color_is_white, opponent_elo=opponent_elo
+    )
 
     n_pos = batch["n_positions"]
     n_elo = batch["n_elos"]
@@ -200,7 +217,7 @@ def _batch_estimate_separate(pgn_text, scan, model_name):
     cfg = SimpleNamespace(**spec.config)
 
     # Stage 1: 1D sweep (same ELO for both)
-    elo_values = np.arange(elo_lo, elo_hi + 1, FIDELITY, dtype=np.float32)
+    elo_values = np.arange(elo_lo, elo_hi + 1, 200, dtype=np.float32)
     n_grid = len(elo_values)
     print(f"Stage 1: 1D sweep ({n_grid} values, step={FIDELITY})...")
     best_elo, best_rate, _ = estimate_elo_batch(
@@ -210,11 +227,17 @@ def _batch_estimate_separate(pgn_text, scan, model_name):
 
     n_evals = n_grid
 
-    # Stage 2: separate 1D sweeps for each color (opponent=1500)
-    margin = (elo_hi - elo_lo) // 2
+    # Stage 2: separate 1D sweeps for each color (opponent = other color's estimate)
+    # Start with a tight margin around the Stage 1 estimate to avoid wandering
+    # to ELO extremes where the model's predictions are flat/undifferentiated.
+    margin = min(400, (elo_hi - elo_lo) // 2)
     n_axis = int(math.ceil(math.sqrt(n_grid)))
     round_num = 0
     best_w, best_b = best_elo, best_elo
+    # if opponent_elo is < 1500 then round up to nearest 100, else round down to nearest 100
+    opponent_elo = (
+        roundup(best_elo + 50) if best_elo < 1500 else rounddown(best_elo - 50)
+    )
 
     while True:
         step = (margin * 2) / max(n_axis - 1, 1)
@@ -236,10 +259,22 @@ def _batch_estimate_separate(pgn_text, scan, model_name):
         )
 
         w_elo, w_rate, _ = _batch_estimate_single_color(
-            pgn_text, white_elos, inf_engine, cfg, color_is_white=True, model_name=model_name
+            pgn_text,
+            white_elos,
+            inf_engine,
+            cfg,
+            color_is_white=True,
+            model_name=model_name,
+            opponent_elo=opponent_elo,
         )
         b_elo, b_rate, _ = _batch_estimate_single_color(
-            pgn_text, black_elos, inf_engine, cfg, color_is_white=False, model_name=model_name
+            pgn_text,
+            black_elos,
+            inf_engine,
+            cfg,
+            color_is_white=False,
+            model_name=model_name,
+            opponent_elo=opponent_elo,
         )
 
         best_w, best_b = w_elo, b_elo
