@@ -1,0 +1,26 @@
+[Event "Live Chess"]
+[Site "Chess.com"]
+[Date "2026.05.12"]
+[Round "-"]
+[White "Henry"]
+[Black "Ricky"]
+[Result "1-0"]
+[CurrentPosition "4Q2k/1p4pp/1n1rBp2/p4P2/4P1P1/1KP4P/PP1r4/6R1 b - - 6 31"]
+[Timezone "UTC"]
+[ECO "D02"]
+[ECOUrl "https://www.chess.com/openings/Queens-Pawn-Opening-Zukertort-Chigorin-Variation-3.Bf4-Bg4"]
+[UTCDate "2026.05.12"]
+[UTCTime "14:40:55"]
+[WhiteElo "726"]
+[BlackElo "708"]
+[TimeControl "300"]
+[Termination "Henry won by checkmate White: 1400, Black: 750"]
+[StartTime "14:40:55"]
+[EndDate "2026.05.12"]
+[EndTime "14:50:16"]
+
+1. d4 d5 2. Nf3 Nc6 3. Bf4 Bg4 4. Nc3 Nf6 5. h3 Bf5 6. Qd2 e6 7. g4 Be4 8. Nxe4
+dxe4 9. Ne5 Bb4 $6 10. c3 $1 Nxe5 $2 11. Bxe5 $9 Be7 $6 12. Qe3 Nd5 $6 13. Qxe4 $1 f6 14.
+Bh2 Qd7 15. O-O-O O-O 16. Qc2 a5 $6 17. e4 Nb6 18. f4 c5 $6 19. dxc5 Bxc5 $2 20.
+Rxd7 $1 Nxd7 21. Bc4 Be3+ 22. Kb1 Kh8 $2 23. Qd3 Nb6 24. Bxe6 Bc5 25. Bg1 Bxg1 26.
+Rxg1 Rfd8 27. Qb5 Rd6 28. f5 Rad8 29. Kc2 Rd2+ 30. Kb3 R8d6 $2 31. Qe8# $1 1-0

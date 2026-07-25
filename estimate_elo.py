@@ -48,9 +48,10 @@ def _batch_estimate_2d(pgn_text, scan, model_name):
     elo_values = np.arange(elo_lo, elo_hi + 1, FIDELITY, dtype=np.float32)
     n_grid = len(elo_values)
     print(f"Stage 1: 1D sweep ({n_grid} values, step={FIDELITY})...")
-    best_elo, best_rate, _ = estimate_elo_batch(
+    result = estimate_elo_batch(
         pgn_text, elo_values, inf_engine, model_name=model_name
     )
+    best_elo, best_rate = result["best_elo"], result["best_rate"]
     print(f"  -> 1D estimate: {best_elo:.0f} (rate={best_rate:.4f})")
 
     n_evals = n_grid
