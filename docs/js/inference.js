@@ -1,20 +1,12 @@
 // ONNX model loading and batch inference
-// Uses ort.wasm.min.js (WASM-only build, no WebGPU/WebNN)
+// Uses onnxruntime-web v1.17.0 (self-contained, no dynamic imports)
 
 let session = null;
 let modelLoaded = false;
 
 async function loadModel(modelPath, onProgress) {
   const ort = window.ort;
-
   if (!ort) throw new Error('ONNX Runtime not loaded');
-
-  // Configure WASM path - must use ./ prefix for ES module resolution
-  if (ort.env && ort.env.wasm) {
-    ort.env.wasm.wasmPaths = './js/';
-    // GitHub Pages doesn't support SharedArrayBuffer (no COOP/COEP headers)
-    ort.env.wasm.numThreads = 1;
-  }
 
   if (onProgress) onProgress('Loading ONNX model...');
 
