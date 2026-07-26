@@ -185,7 +185,7 @@ function buildBatchTensor(positions, eloValues, nSample) {
     humanMoves: new Int32Array(allHumanMoves),
     legalMasks,
     nPositions: nPos,
-    nElos,
+    nElos: nElo,
   };
 }
 
@@ -262,7 +262,7 @@ function buildBatchTensorSingleColor(positions, eloValues, colorIsWhite, opponen
     humanMoves: new Int32Array(allHumanMoves),
     legalMasks,
     nPositions: sampledCount,
-    nElos,
+    nElos: nElo,
   };
 }
 

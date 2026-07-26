@@ -8,6 +8,9 @@ async function loadModel(modelPath, onProgress) {
   const ort = window.ort;
   if (!ort) throw new Error('ONNX Runtime not loaded');
 
+  // Disable multi-threading to avoid SharedArrayBuffer / COOP/COEP requirement
+  ort.env.wasm.numThreads = 1;
+
   if (onProgress) onProgress('Loading ONNX model...');
 
   session = await ort.InferenceSession.create(modelPath, {

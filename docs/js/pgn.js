@@ -5,9 +5,7 @@ function parsePgnToPositions(pgnText) {
   const Chess = window.Chess;
   const game = new Chess();
 
-  if (!game.load_pgn(pgnText)) {
-    return null;
-  }
+  game.loadPgn(pgnText);
 
   const headers = game.header();
   const history = game.history({ verbose: true });
