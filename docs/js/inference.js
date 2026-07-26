@@ -1,5 +1,5 @@
 // ONNX model loading and batch inference
-// Mirrors chess_accuracy/batch_inference.py:BatchMaia3Inference
+// Uses ort.wasm.min.js (WASM-only build, no WebGPU/WebNN)
 
 let session = null;
 let modelLoaded = false;
@@ -9,13 +9,11 @@ async function loadModel(modelPath, onProgress) {
 
   if (!ort) throw new Error('ONNX Runtime not loaded');
 
-  // Configure WASM path - must start with ./ for proper ES module resolution
+  // Configure WASM path - must use ./ prefix for ES module resolution
   if (ort.env && ort.env.wasm) {
     ort.env.wasm.wasmPaths = './js/';
-    // Disable threading if SharedArrayBuffer not available (GitHub Pages)
-    if (typeof SharedArrayBuffer === 'undefined') {
-      ort.env.wasm.numThreads = 1;
-    }
+    // GitHub Pages doesn't support SharedArrayBuffer (no COOP/COEP headers)
+    ort.env.wasm.numThreads = 1;
   }
 
   if (onProgress) onProgress('Loading ONNX model...');
