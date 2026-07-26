@@ -9,9 +9,9 @@ async function loadModel(modelPath, onProgress) {
 
   if (!ort) throw new Error('ONNX Runtime not loaded');
 
-  // Configure WASM path
+  // Configure WASM path - must start with ./ for proper ES module resolution
   if (ort.env && ort.env.wasm) {
-    ort.env.wasm.wasmPaths = 'js/';
+    ort.env.wasm.wasmPaths = './js/';
     // Disable threading if SharedArrayBuffer not available (GitHub Pages)
     if (typeof SharedArrayBuffer === 'undefined') {
       ort.env.wasm.numThreads = 1;
@@ -35,6 +35,7 @@ function isModelLoaded() {
 }
 
 // Run batch inference
+// tokens: Float32Array of shape (batch, 64, 96)
 // Returns: { logitsMove: Float32Array (batch, 4352) }
 async function predict(tokens, selfElos, oppoElos) {
   if (!session) throw new Error('Model not loaded');
@@ -42,7 +43,7 @@ async function predict(tokens, selfElos, oppoElos) {
   const ort = window.ort;
   const batchSize = selfElos.length;
 
-  const tokensTensor = new ort.Tensor('float32', tokens, [batchSize, 64, 97]);
+  const tokensTensor = new ort.Tensor('float32', tokens, [batchSize, 64, 96]);
   const selfElosTensor = new ort.Tensor('float32', selfElos, [batchSize]);
   const oppoElosTensor = new ort.Tensor('float32', oppoElos, [batchSize]);
 

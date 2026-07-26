@@ -46,7 +46,7 @@ async function init() {
   // Load model in background
   loadModelStatus('Loading model...');
   try {
-    await loadModel('models/maia3-5m.onnx', (msg) => loadModelStatus(msg));
+    await loadModel('./models/maia3-5m.onnx', (msg) => loadModelStatus(msg));
     loadModelStatus('Model ready');
     estimateBtn.disabled = false;
   } catch (err) {
