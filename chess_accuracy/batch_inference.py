@@ -65,12 +65,48 @@ def load_inference_engine(model_name: str = "maia3-5m") -> BatchMaia3Inference:
     return BatchMaia3Inference(str(onnx_path))
 
 
+def _compute_score(logits_masked, human_moves, n_pos, alpha=0.6):
+    """Compute blended top-1 accuracy + MRR score.
+
+    score = alpha * top1_accuracy + (1 - alpha) * mean_reciprocal_rank
+
+    Args:
+        logits_masked: (N, M, V) masked logits for legal moves
+        human_moves: (N,) human move indices
+        n_pos: number of positions
+        alpha: weight on top-1 vs MRR (0 = pure MRR, 1 = pure top-1)
+
+    Returns:
+        (M,) score per ELO value
+    """
+    if n_pos == 0:
+        return np.zeros(logits_masked.shape[1], dtype=np.float64)
+
+    n_elo = logits_masked.shape[1]
+    pos_idx = np.arange(n_pos)[:, None]  # (N, 1)
+    elo_idx = np.arange(n_elo)[None, :]  # (1, M)
+
+    # Logit of the human move for each (position, ELO): (N, M)
+    human_logits = logits_masked[pos_idx, elo_idx, human_moves[:, None]]
+
+    # Top-1 accuracy: (M,)
+    top1_moves = logits_masked.argmax(axis=2)  # (N, M)
+    top1_acc = (top1_moves == human_moves[:, None]).mean(axis=0)
+
+    # Mean reciprocal rank: rank of human move among legal moves
+    rank = (logits_masked >= human_logits[:, :, None]).sum(axis=2) + 1  # (N, M)
+    mrr = (1.0 / rank).mean(axis=0)
+
+    return alpha * top1_acc + (1.0 - alpha) * mrr
+
+
 def estimate_elo_batch(
     pgn_text: str,
     elo_values: np.ndarray,
     inference_engine: BatchMaia3Inference,
     model_name: str = "maia3-5m",
     n_sample: int = 0,
+    alpha: float = 0.6,
 ) -> tuple[float, float, np.ndarray]:
     """Estimate ELO for a PGN game using batch inference over a range of ELO values.
 
@@ -80,12 +116,13 @@ def estimate_elo_batch(
         inference_engine: loaded BatchMaia3Inference
         model_name: model alias for config lookup
         n_sample: number of positions to sample (0 = all)
+        alpha: blend weight for top-1 vs MRR (0.6 default)
 
     Returns:
         (best_elo, best_rate, all_rates)
-        - best_elo: ELO with highest match rate
-        - best_rate: the peak match rate
-        - all_rates: array of match rates, one per ELO value (shape (M,))
+        - best_elo: ELO with highest score
+        - best_rate: the peak score
+        - all_rates: array of scores, one per ELO value (shape (M,))
     """
     # Get model config
     spec = resolve_model_spec(model_name)
@@ -120,12 +157,8 @@ def estimate_elo_batch(
     legal_masks_expanded = legal_masks_np[:, np.newaxis, :]  # (N, 1, 4352)
     logits_masked = np.where(legal_masks_expanded, logits_move, -np.inf)
 
-    # For each ELO, compute match rate: top-1 legal prediction vs human's actual move
-    all_rates = np.zeros(n_elo, dtype=np.float64)
-    for elo_idx in range(n_elo):
-        top1_moves = np.argmax(logits_masked[:, elo_idx, :], axis=1)  # (N,)
-        matches = (top1_moves == human_moves).sum()
-        all_rates[elo_idx] = matches / n_pos if n_pos > 0 else 0.0
+    # Vectorized score: top-1 + MRR ensemble
+    all_rates = _compute_score(logits_masked, human_moves, n_pos, alpha=alpha)
 
     best_idx = np.argmax(all_rates)
     best_elo = float(elo_values[best_idx])
@@ -218,6 +251,7 @@ def _eval_2d_grid(
     cfg,
     inference_engine: BatchMaia3Inference,
     n_sample: int = 0,
+    alpha: float = 0.6,
 ) -> np.ndarray:
     """Evaluate a 2D ELO grid, returning rate_grid (W, B)."""
     batch = build_batch_tensors_2d(
@@ -238,13 +272,8 @@ def _eval_2d_grid(
     legal_masks_np = legal_masks.numpy()[:, np.newaxis, :]
     logits_masked = np.where(legal_masks_np, logits_move, -np.inf)
 
-    top1_moves = np.argmax(logits_masked, axis=2)  # (N, W*B)
-    matches = top1_moves == human_moves[:, np.newaxis]  # (N, W*B)
-    match_counts = matches.sum(axis=0)  # (W*B,)
-    rate_grid = (
-        (match_counts / n_pos).reshape(n_w, n_b) if n_pos > 0 else np.zeros((n_w, n_b))
-    )
-    return rate_grid
+    all_rates = _compute_score(logits_masked, human_moves, n_pos, alpha=alpha)
+    return all_rates.reshape(n_w, n_b)
 
 
 def estimate_elo_2d_halving(

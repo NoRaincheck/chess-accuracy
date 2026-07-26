@@ -187,11 +187,21 @@ def _batch_estimate_single_color(
     legal_masks_expanded = legal_masks_np[:, np.newaxis, :]
     logits_masked = np.where(legal_masks_expanded, logits_move, -np.inf)
 
-    all_rates = np.zeros(n_elo, dtype=np.float64)
-    for elo_idx in range(n_elo):
-        top1_moves = np.argmax(logits_masked[:, elo_idx, :], axis=1)
-        matches = (top1_moves == human_moves).sum()
-        all_rates[elo_idx] = matches / n_pos if n_pos > 0 else 0.0
+    # Vectorized score: top-1 + MRR ensemble
+    if n_pos == 0:
+        all_rates = np.zeros(n_elo, dtype=np.float64)
+    else:
+        pos_idx = np.arange(n_pos)[:, None]
+        elo_idx = np.arange(n_elo)[None, :]
+        human_logits = logits_masked[pos_idx, elo_idx, human_moves[:, None]]
+
+        top1_moves = logits_masked.argmax(axis=2)
+        top1_acc = (top1_moves == human_moves[:, None]).mean(axis=0)
+
+        rank = (logits_masked >= human_logits[:, :, None]).sum(axis=2) + 1
+        mrr = (1.0 / rank).mean(axis=0)
+
+        all_rates = 0.6 * top1_acc + 0.4 * mrr
 
     best_idx = np.argmax(all_rates)
     best_elo = float(elo_values[best_idx])
