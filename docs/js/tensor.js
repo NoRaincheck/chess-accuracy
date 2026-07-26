@@ -34,7 +34,8 @@ function tokenizeBoard(board) {
       // Mirror if black's turn
       const targetSquare = isBlackTurn ? (7 - rank) * 8 + file : rank * 8 + file;
 
-      const colorOffset = (ch >= 'A' && ch <= 'Z') ? 0 : 6; // white=0-5, black=6-11
+      let colorOffset = (ch >= 'A' && ch <= 'Z') ? 0 : 6; // white=0-5, black=6-11
+      if (isBlackTurn) colorOffset = 6 - colorOffset; // swap colors when mirroring
       const pieceIdx = PIECE_CHANNEL[ch];
 
       tokens[targetSquare * CHANNELS_PER_FRAME + colorOffset + pieceIdx] = 1;
@@ -55,10 +56,10 @@ function getHistoricalTokens(history) {
   for (let sq = 0; sq < 64; sq++) {
     for (let h = 0; h < HISTORY_LEN; h++) {
       const srcIdx = Math.max(0, h - padCount);
-      const srcOffset = srcIdx * 64 * CHANNELS_PER_FRAME + sq * CHANNELS_PER_FRAME;
+      const srcOffset = sq * CHANNELS_PER_FRAME;
       const dstOffset = h * CHANNELS_PER_FRAME;
       for (let c = 0; c < CHANNELS_PER_FRAME; c++) {
-        result[sq * D_IN + dstOffset + c] = history[srcOffset + c];
+        result[sq * D_IN + dstOffset + c] = history[srcIdx][srcOffset + c];
       }
     }
   }

@@ -4,8 +4,6 @@ import { parsePgnToPositions } from './pgn.js';
 import { tokenizeBoard, getHistoricalTokens, buildBatchTensor, buildBatchTensorSingleColor } from './tensor.js';
 import { loadModel, isModelLoaded, predict } from './inference.js';
 import { computeScoreStreaming, estimateElo1D, roundUp, roundDown, MIN_ELO, MAX_ELO, FIDELITY } from './scoring.js';
-import { ChessBoard } from './board.js';
-import { MoveList } from './movelist.js';
 
 // Expose moveIndex globally for pgn.js fallback
 window.__moveIndex = moveIndex;
@@ -14,7 +12,6 @@ window.__moveIndex = moveIndex;
 const pgnInput = document.getElementById('pgn-input');
 const estimateBtn = document.getElementById('estimate-btn');
 const exampleBtn = document.getElementById('example-btn');
-const flipBtn = document.getElementById('flip-btn');
 const progressContainer = document.getElementById('progress-container');
 const progressBar = document.getElementById('progress-bar');
 const progressText = document.getElementById('progress-text');
@@ -29,20 +26,8 @@ const blackElo = document.getElementById('black-elo');
 const matchRate = document.getElementById('match-rate');
 const headerInfo = document.getElementById('header-info');
 
-// Board and move list
-let board = null;
-let moveList = null;
-
 // Initialize
 async function init() {
-  board = new ChessBoard('board-container', { squareSize: 56 });
-  moveList = new MoveList('movelist-container');
-  moveList.onMoveClick = (index) => onMoveClick(index);
-
-  // Wait for pieces to load, then render empty board
-  await new Promise(r => setTimeout(r, 100));
-  board.render(null);
-
   // Load model in background
   loadModelStatus('Loading model...');
   try {
@@ -87,24 +72,6 @@ function hideResults() {
   resultsPanel.classList.remove('has-results');
 }
 
-function onMoveClick(index) {
-  if (!window.__currentGame) return;
-  const game = window.__currentGame;
-
-  // Replay to the clicked position
-  const Chess = window.Chess;
-  const replayBoard = new Chess();
-  for (let i = 0; i <= index; i++) {
-    replayBoard.move(game.positions[i].moveSan, { sloppy: true });
-  }
-
-  board.setLastMove(
-    game.positions[index].moveUci.slice(0, 2),
-    game.positions[index].moveUci.slice(2, 4)
-  );
-  board.render(replayBoard);
-}
-
 // Main estimation function
 async function estimateElo() {
   const pgnText = pgnInput.value.trim();
@@ -134,14 +101,6 @@ async function estimateElo() {
   }
 
   window.__currentGame = game;
-
-  // Set up move list
-  moveList.setMoves(game.positions);
-
-  // Replay and show initial position
-  const Chess = window.Chess;
-  const replayBoard = new Chess();
-  board.render(replayBoard);
 
   setProgress(`Parsed ${game.nMoves} moves. Building tensors...`, 15);
   await sleep(50);
@@ -219,7 +178,6 @@ async function estimateElo() {
     }
 
     margin = Math.floor(margin / 2);
-    opponentElo = bestW < 1500 ? roundUp(bestW + 50) : roundDown(bestW - 50);
   }
 
   setProgress('Done!', 100);
@@ -277,25 +235,6 @@ Nxc4 28. Bxc5 b6 29. Bd4 Qxd4 0-1`;
     }
   } catch {
     pgnInput.value = '[Event "Example"]\n[White "Player1"]\n[Black "Player2"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0';
-  }
-});
-
-flipBtn.addEventListener('click', () => {
-  if (board) {
-    board.setFlipped(!board.flipped);
-    if (window.__currentGame) {
-      const Chess = window.Chess;
-      const replayBoard = new Chess();
-      const moveIdx = moveList.currentMoveIndex;
-      if (moveIdx >= 0) {
-        for (let i = 0; i <= moveIdx; i++) {
-          replayBoard.move(window.__currentGame.positions[i].moveSan, { sloppy: true });
-        }
-      }
-      board.render(replayBoard);
-    } else {
-      board.render(null);
-    }
   }
 });
 

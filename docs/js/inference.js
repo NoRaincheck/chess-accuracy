@@ -20,6 +20,17 @@ async function loadModel(modelPath, onProgress) {
 
   modelLoaded = true;
   if (onProgress) onProgress('Model loaded');
+
+  // Warm up WASM backend with a small inference
+  const warmupTokens = new Float32Array(2 * 64 * 96);
+  const warmupSelfElos = new Float32Array([1500, 1500]);
+  const warmupOppoElos = new Float32Array([1500, 1500]);
+  await session.run({
+    tokens: new ort.Tensor('float32', warmupTokens, [2, 64, 96]),
+    self_elos: new ort.Tensor('float32', warmupSelfElos, [2]),
+    oppo_elos: new ort.Tensor('float32', warmupOppoElos, [2]),
+  });
+
   return session;
 }
 
