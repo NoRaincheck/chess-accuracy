@@ -6,6 +6,15 @@
   <title>Chess ELO Estimator</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="css/style.css">
+  <!-- Import map to resolve onnxruntime-web bare specifiers -->
+  <script type="importmap">
+  {
+    "imports": {
+      "js/ort-wasm-simd-threaded.jsep.mjs": "./js/ort-wasm-simd-threaded.jsep.mjs",
+      "js/ort-wasm-simd-threaded.mjs": "./js/ort-wasm-simd-threaded.mjs"
+    }
+  }
+  </script>
 </head>
 <body>
   <div class="app">
@@ -66,10 +75,10 @@
     </footer>
   </div>
 
-  <!-- Load onnxruntime-web (exposes window.ort) -->
-  <script src="js/ort.min.js"></script>
+  <!-- Load onnxruntime-web WASM-only build (exposes window.ort) -->
+  <script src="js/ort.min.js?v=400fec5"></script>
   <!-- Load chess.js ESM and expose as window.Chess, then load main app -->
   <script type="module" src="js/chess-wrapper.js"></script>
-  <script type="module" src="js/main.js"></script>
+  <script type="module" src="js/main.js?v=400fec5"></script>
 </body>
 </html>
