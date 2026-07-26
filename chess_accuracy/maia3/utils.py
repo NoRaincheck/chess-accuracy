@@ -1,24 +1,4 @@
-import os
-import random
-from pathlib import Path
-
 import chess
-import numpy as np
-import torch
-
-CODE_DIR = Path(__file__).resolve().parent
-REPO_ROOT = CODE_DIR.parent
-
-
-def seed_everything(seed: int):
-    random.seed(seed)
-    os.environ["PYTHONHASHSEED"] = str(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
 
 
 def get_all_possible_moves():
@@ -31,7 +11,6 @@ def get_all_possible_moves():
             for target_rank in range(8):
                 for target_file in range(8):
                     target_square = chess.square(target_file, target_rank)
-                    chess.Move(square, target_square)
                     all_moves.append(chess.square_name(square) + chess.square_name(target_square))
 
     # NOTE: promotions will always be from rank 7 to rank 8, because we are flipping

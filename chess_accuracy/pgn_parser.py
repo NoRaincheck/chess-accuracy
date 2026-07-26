@@ -2,6 +2,7 @@
 
 import io
 import math
+import re
 from collections import deque
 
 import chess
@@ -45,8 +46,6 @@ def parse_pgn_to_positions(pgn_text: str) -> list[dict]:
         clk_ponder = 0.0
 
         # Extract [%clk H:MM:SS] from comment
-        import re
-
         clk_match = re.search(r"\[%clk\s+(\d+):(\d+):(\d+(?:\.\d+)?)\]", comment)
         if clk_match:
             h, m, s = int(clk_match.group(1)), int(clk_match.group(2)), float(clk_match.group(3))

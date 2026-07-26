@@ -12,22 +12,10 @@ from chess_accuracy import (
     game_accuracy,
     phase_accuracy,
 )
-
-MODEL_ID = "lczerolens/t1-256x10-distilled-swa-2432500"
-MODEL_ID = "lczerolens/BT3-768x15x24h-swa-2790000"
+from chess_accuracy.lc0_utils import MODEL_ID, format_acc, wdl_to_white_cp_and_winpct
 
 model = LczeroModel.from_hf(MODEL_ID)
 model.eval()
-
-
-def wdl_to_white_cp_and_winpct(wdl, is_white_turn):
-    wdl = wdl.detach()
-    q_stm = wdl[0] + 0.5 * wdl[1]
-    q_white = q_stm if is_white_turn else 1.0 - q_stm
-    win_pct = float(q_white * 100)
-    v = float(2 * q_white - 1)
-    cp = 290 * v / (1 - 1.1 * v * v) if abs(v) < 0.99 else 290 * v / 0.01
-    return cp, win_pct
 
 
 def annotate_game(pgn_path):
@@ -58,10 +46,6 @@ def annotate_game(pgn_path):
         annotated_node.set_eval(pov_score)
 
     return annotated, white_pov_cps, white_pov_winpcts, boards
-
-
-def format_acc(label, w, b):
-    return f"{label}: W {w:.2f}%  B {b:.2f}%"
 
 
 pgn_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("example2.pgn")

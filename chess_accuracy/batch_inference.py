@@ -6,11 +6,11 @@ N positions × M ELO values, instead of M separate inference calls.
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import numpy as np
 import torch
 from numpy import ndarray
-from typing import cast
 
 from .maia3.model_registry import resolve_model_spec
 from .pgn_parser import (
@@ -195,7 +195,7 @@ def estimate_elo_2d(
     if not positions:
         return 0.0, 0.0, 0.0, np.zeros((len(white_elo_values), len(black_elo_values)))
 
-    batch = build_batch_tensors_2d(positions, white_elo_values, black_elo_values, cfg, n_sample=0)
+    batch = build_batch_tensors_2d(positions, white_elo_values, black_elo_values, cfg, n_sample=n_sample)
 
     tokens = batch["tokens"]
     self_elos = batch["self_elos"]

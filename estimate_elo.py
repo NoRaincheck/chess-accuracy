@@ -19,7 +19,6 @@ import chess
 import chess.pgn
 import numpy as np
 import torch
-from tqdm import tqdm
 
 FIDELITY = 50
 
@@ -45,11 +44,7 @@ def _build_single_color_tensors(positions, elo_values, cfg, color_is_white, n_sa
     n_positions, n_elos.
     """
     from chess_accuracy.maia3.dataset import get_historical_tokens, get_legal_moves_mask, tokenize_board
-    from chess_accuracy.maia3.utils import get_all_possible_moves
-    from chess_accuracy.pgn_parser import _select_sample_indices, move_to_index
-
-    ALL_MOVES = get_all_possible_moves()
-    ALL_MOVES_DICT = {m: i for i, m in enumerate(ALL_MOVES)}
+    from chess_accuracy.pgn_parser import ALL_MOVES_DICT, _select_sample_indices, move_to_index
 
     n_elo = len(elo_values)
 
@@ -72,8 +67,6 @@ def _build_single_color_tensors(positions, elo_values, cfg, color_is_white, n_sa
         sample_indices = _select_sample_indices(len(color_positions), n_sample)
     else:
         sample_indices = list(range(len(color_positions)))
-
-    len(sample_indices)
 
     # We need to replay the full game to build correct history tokens
     # But only keep tokens for positions of the target color
@@ -151,6 +144,7 @@ def _build_single_color_tensors(positions, elo_values, cfg, color_is_white, n_sa
 
 def _batch_estimate_single_color(pgn_text, elo_values, inf_engine, cfg, color_is_white, model_name, opponent_elo=1500):
     """Run 1D ELO sweep for a single color, opponent fixed at 1500."""
+    from chess_accuracy.batch_inference import _compute_score
     from chess_accuracy.pgn_parser import parse_pgn_to_positions
 
     positions = parse_pgn_to_positions(pgn_text)
@@ -177,21 +171,7 @@ def _batch_estimate_single_color(pgn_text, elo_values, inf_engine, cfg, color_is
     legal_masks_expanded = legal_masks_np[:, np.newaxis, :]
     logits_masked = np.where(legal_masks_expanded, logits_move, -np.inf)
 
-    # Vectorized score: top-1 + MRR ensemble
-    if n_pos == 0:
-        all_rates = np.zeros(n_elo, dtype=np.float64)
-    else:
-        pos_idx = np.arange(n_pos)[:, None]
-        elo_idx = np.arange(n_elo)[None, :]
-        human_logits = logits_masked[pos_idx, elo_idx, human_moves[:, None]]
-
-        top1_moves = logits_masked.argmax(axis=2)
-        top1_acc = (top1_moves == human_moves[:, None]).mean(axis=0)
-
-        rank = (logits_masked >= human_logits[:, :, None]).sum(axis=2) + 1
-        mrr = (1.0 / rank).mean(axis=0)
-
-        all_rates = 0.6 * top1_acc + 0.4 * mrr
+    all_rates = _compute_score(logits_masked, human_moves, n_pos, alpha=0.6)
 
     best_idx = np.argmax(all_rates)
     best_elo = float(elo_values[best_idx])
