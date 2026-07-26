@@ -31,7 +31,8 @@ def wdl_to_white_cp_and_winpct(wdl, is_white_turn):
 
 
 def annotate_game(pgn_path):
-    game = chess.pgn.read_game(open(pgn_path))
+    with open(pgn_path) as f:
+        game = chess.pgn.read_game(f)
     annotated = chess.pgn.Game()
     annotated.headers = game.headers.copy()
     annotated.setup(game.board())

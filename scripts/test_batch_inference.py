@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """End-to-end test for batch ELO inference.
 
 Verifies that the batch ONNX approach produces correct results by comparing
@@ -24,7 +23,8 @@ def test_pgn_parser():
     """Test PGN parsing and tensor construction."""
     print("=== PGN Parser ===")
     for pgn_file in ["example1.pgn", "example2.pgn"]:
-        pgn = open(pgn_file).read()
+        with open(pgn_file) as f:
+            pgn = f.read()
         positions = parse_pgn_to_positions(pgn)
         print(f"  {pgn_file}: {len(positions)} positions parsed")
 
@@ -56,7 +56,8 @@ def test_onnx_vs_pytorch():
 
     # Test on both example games
     for pgn_file in ["example1.pgn", "example2.pgn"]:
-        pgn = open(pgn_file).read()
+        with open(pgn_file) as f:
+            pgn = f.read()
         positions = parse_pgn_to_positions(pgn)
         elo_values = np.array([1500.0])
         batch = build_batch_tensors(positions, elo_values, cfg, n_sample=10)
@@ -93,7 +94,8 @@ def test_legal_move_masking():
     spec = resolve_model_spec("maia3-5m")
     cfg = SimpleNamespace(**spec.config)
 
-    pgn = open("example2.pgn").read()
+    with open("example2.pgn") as f:
+        pgn = f.read()
     positions = parse_pgn_to_positions(pgn)
     elo_values = np.array([1500.0])
     batch = build_batch_tensors(positions, elo_values, cfg, n_sample=0)
@@ -122,7 +124,8 @@ def test_batch_estimate():
     onnx_engine = BatchMaia3Inference("chess_accuracy/maia3/onnx/maia3-5m.onnx")
 
     for pgn_file, expected_range in [("example1.pgn", (500, 1000)), ("example2.pgn", (2500, 3500))]:
-        pgn = open(pgn_file).read()
+        with open(pgn_file) as f:
+            pgn = f.read()
         elo_values = np.arange(300, 3501, 50, dtype=np.float32)
 
         t0 = time.time()

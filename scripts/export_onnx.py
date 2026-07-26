@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Export a maia3 PyTorch checkpoint to ONNX format.
 
 Usage:
@@ -101,7 +100,7 @@ def export(model_name: str = "maia3-5m", opset: int = 14, output_dir: str | None
         print("ONNX model verified OK")
     except ImportError:
         print("onnx package not installed, skipping verification")
-    except Exception as e:
+    except RuntimeError as e:
         print(f"ONNX verification failed: {e}")
 
     # Verify numerical correctness with onnxruntime

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Estimate chess player ELO from game moves using maia3.
 

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Estimate chess player ELO from game moves using maia3.
 
@@ -52,7 +51,7 @@ def _batch_estimate_2d(pgn_text, scan, model_name):
     print(f"  -> 1D estimate: {best_elo:.0f} (rate={best_rate:.4f})")
 
     n_evals = n_grid
-    best_w, best_b, best_rate = best_elo, best_elo, best_rate
+    best_w, best_b, best_rate = best_elo, best_elo, 0
 
     # Stage 2: iterative 2D refinement
     margin = (elo_hi - elo_lo) // 2  # start with full range
