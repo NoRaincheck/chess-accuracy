@@ -9,6 +9,8 @@ from types import SimpleNamespace
 
 import numpy as np
 import torch
+from numpy import ndarray
+from typing import cast
 
 from .maia3.model_registry import resolve_model_spec
 from .pgn_parser import (
@@ -43,7 +45,7 @@ class BatchMaia3Inference:
             "self_elos": self_elos.numpy() if isinstance(self_elos, torch.Tensor) else self_elos,
             "oppo_elos": oppo_elos.numpy() if isinstance(oppo_elos, torch.Tensor) else oppo_elos,
         }
-        return self.session.run(None, ort_inputs)
+        return cast(tuple[ndarray, ndarray, ndarray], self.session.run(None, ort_inputs))
 
 
 def load_inference_engine(model_name: str = "maia3-5m") -> BatchMaia3Inference:

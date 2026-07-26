@@ -17,7 +17,7 @@ from chess_accuracy.maia3.model_registry import (
 )
 
 
-def export(model_name: str = "maia3-5m", opset: int = 14, output_dir: str | None = None):
+def export(model_name: str = "maia3-5m", opset: int = 14, output_dir: Path | str | None = None):
     """Export a maia3 model to ONNX."""
     from chess_accuracy.maia3.models import MAIA3Model
 

@@ -1,4 +1,5 @@
 import math
+from typing import cast
 
 import chess
 import numpy as np
@@ -46,7 +47,8 @@ class RelativeBias(nn.Module):
         self.gate = nn.Parameter(torch.zeros(nheads, 15 * 15))
 
     def forward(self):
-        relative_bias = self.gate @ self.rpe_factorizer
+        rpe = cast(torch.Tensor, self.rpe_factorizer)
+        relative_bias = self.gate @ rpe
         relative_bias = relative_bias.view(self.nheads, 64, 64)
         return relative_bias
 
@@ -245,8 +247,9 @@ class CustomTransformerEncoder(nn.Module):
             ]
         )
         for blk in self.layers:
-            if blk.self_attn.use_gab:
-                blk.self_attn.gab_weight = gab_weight
+            attn = cast(MHA, blk.self_attn)
+            if attn.use_gab:
+                attn.gab_weight = gab_weight
         self.norm = nn.LayerNorm(dim)
 
     def forward(self, x, attn_mask=None):

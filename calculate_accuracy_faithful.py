@@ -33,6 +33,7 @@ def wdl_to_white_cp_and_winpct(wdl, is_white_turn):
 def annotate_game(pgn_path):
     with open(pgn_path) as f:
         game = chess.pgn.read_game(f)
+    assert game is not None
     annotated = chess.pgn.Game()
     annotated.headers = game.headers.copy()
     annotated.setup(game.board())
@@ -46,6 +47,7 @@ def annotate_game(pgn_path):
         annotated_node = annotated.add_variation(move) if annotated_node is None else annotated_node.add_variation(move)
         lz_board.push(move)
         game = game.next()
+        assert game is not None
         board = game.board().copy()
         boards.append(board)
         output = model.forward(lz_board)

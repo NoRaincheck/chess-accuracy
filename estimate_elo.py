@@ -47,7 +47,7 @@ def _batch_estimate_2d(pgn_text, scan, model_name):
     n_grid = len(elo_values)
     print(f"Stage 1: 1D sweep ({n_grid} values, step={FIDELITY})...")
     result = estimate_elo_batch(pgn_text, elo_values, inf_engine, model_name=model_name)
-    best_elo, best_rate = result["best_elo"], result["best_rate"]
+    best_elo, best_rate = result[0], result[1]
     print(f"  -> 1D estimate: {best_elo:.0f} (rate={best_rate:.4f})")
 
     n_evals = n_grid
@@ -100,6 +100,7 @@ def estimate(
     """Estimate ELO for a game."""
     pgn_text = pgn_path.read_text()
     game = chess.pgn.read_game(io.StringIO(pgn_text))
+    assert game is not None
 
     white_name = game.headers.get("White", "?")
     black_name = game.headers.get("Black", "?")

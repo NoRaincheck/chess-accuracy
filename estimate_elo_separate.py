@@ -294,6 +294,7 @@ def estimate(
     """Estimate ELO for a game."""
     pgn_text = pgn_path.read_text()
     game = chess.pgn.read_game(io.StringIO(pgn_text))
+    assert game is not None
 
     white_name = game.headers.get("White", "?")
     black_name = game.headers.get("Black", "?")
