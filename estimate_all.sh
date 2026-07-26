@@ -1,68 +1,99 @@
 #!/usr/bin/env bash
-# Run estimate_elo.py on all PGN files in data/ using maia3-79m with no sampling.
-# Outputs estimate_all.json (NDJSON) and elo_results.csv with per-game ELO, mean, and difference.
+# Run estimate_elo.py on all PGN files in data/ and report speed + alignment with header ELO.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DATA_DIR="$SCRIPT_DIR/data"
-JSON_FILE="$SCRIPT_DIR/estimate_all.json"
 CSV_FILE="$SCRIPT_DIR/elo_results.csv"
 
-# Start fresh
-> "$JSON_FILE"
-
 count=0
+total_seconds=0
+sum_abs_w=0
+sum_abs_b=0
+n_w=0
+n_b=0
+n_total=0
+
+# CSV header
+echo "game_file,white,black,white_elo_hdr,black_elo_hdr,est_white_elo,est_black_elo,peak_rate,n_evaluations,n_moves,sampled,wall_seconds" > "$CSV_FILE"
+
 for pgn in "$DATA_DIR"/*.pgn; do
     [ -f "$pgn" ] || continue
     count=$((count + 1))
-    echo "============================================"
-    echo "Processing: $(basename "$pgn")"
-    echo "============================================"
-    python3 "$SCRIPT_DIR/estimate_elo.py" "$pgn" --json >> "$JSON_FILE"
+    fname=$(basename "$pgn")
+
+    SECONDS=0
+    result=$(uv run python3 "$SCRIPT_DIR/estimate_elo.py" "$pgn" --json --quiet 2>/dev/null)
+    elapsed=$SECONDS
+    total_seconds=$((total_seconds + elapsed))
+
+    # Extract fields
+    white=$(echo "$result" | jq -r '.white')
+    black=$(echo "$result" | jq -r '.black')
+    wh=$(echo "$result" | jq -r '.white_elo_hdr')
+    bh=$(echo "$result" | jq -r '.black_elo_hdr')
+    ew=$(echo "$result" | jq -r '.est_white_elo')
+    eb=$(echo "$result" | jq -r '.est_black_elo')
+    pr=$(echo "$result" | jq -r '.peak_rate')
+    ne=$(echo "$result" | jq -r '.n_evaluations')
+    nm=$(echo "$result" | jq -r '.n_moves')
+    sa=$(echo "$result" | jq -r '.sampled')
+
+    # Write CSV row
+    printf '"%s vs %s","%s","%s","%s","%s",%s,%s,%s,%s,%s,%s,%s\n' \
+        "$white" "$black" "$white" "$black" "$wh" "$bh" "$ew" "$eb" "$pr" "$ne" "$nm" "$sa" "$elapsed" \
+        >> "$CSV_FILE"
+
+    # Accumulate alignment stats (header ELO can be numeric or "?"; skip non-numeric)
+    w_diff=""
+    b_diff=""
+    if [[ "$wh" =~ ^[0-9]+$ ]]; then
+        w_diff=$(python3 -c "print(round(abs($ew - $wh), 1))")
+        sum_abs_w=$(python3 -c "print($sum_abs_w + $w_diff)")
+        n_w=$((n_w + 1))
+    fi
+    if [[ "$bh" =~ ^[0-9]+$ ]]; then
+        b_diff=$(python3 -c "print(round(abs($eb - $bh), 1))")
+        sum_abs_b=$(python3 -c "print($sum_abs_b + $b_diff)")
+        n_b=$((n_b + 1))
+    fi
+    n_total=$((n_total + 1))
+
+    # Compute signed diffs for display
+    w_signed="${w_diff:-?}"
+    b_signed="${b_diff:-?}"
+    if [[ -n "$w_diff" ]]; then
+        w_signed=$(python3 -c "d=$ew - ($wh); print(f'+{d:.1f}' if d >= 0 else f'{d:.1f}')")
+    fi
+    if [[ -n "$b_diff" ]]; then
+        b_signed=$(python3 -c "d=$eb - ($bh); print(f'+{d:.1f}' if d >= 0 else f'{d:.1f}')")
+    fi
+
+    printf "  [%3ds] %-36s  W: %6s -> %6s (%s)  B: %6s -> %6s (%s)\n" \
+        "$elapsed" "$fname" "$wh" "$ew" "$w_signed" "$bh" "$eb" "$b_signed"
 done
 
-echo "Done. Processed $count file(s)."
 echo ""
+echo "Done. Processed $count file(s) in ${total_seconds}s total."
+echo ""
+echo "===== Alignment Summary ====="
+echo "Games: $count"
 
-# Filter to only JSON object lines
-JSONLINES=$(grep '^{' "$JSON_FILE" || true)
-
-if [ -z "$JSONLINES" ]; then
-    echo "Error: no JSON results found" >&2
-    exit 1
+if [ "$n_w" -gt 0 ]; then
+    mae_w=$(python3 -c "print(round($sum_abs_w / $n_w, 1))")
+    echo "Mean Absolute Error (white): $mae_w"
+fi
+if [ "$n_b" -gt 0 ]; then
+    mae_b=$(python3 -c "print(round($sum_abs_b / $n_b, 1))")
+    echo "Mean Absolute Error (black): $mae_b"
+fi
+if [ "$n_w" -gt 0 ] && [ "$n_b" -gt 0 ]; then
+    mae_all=$(python3 -c "print(round(($sum_abs_w + $sum_abs_b) / ($n_w + $n_b), 1))")
+    echo "Mean Absolute Error (overall): $mae_all"
 fi
 
-# Build CSV: one JSON object per line → CSV with mean & diff
-# First pass: compute mean corrected_elo across all games
-mean_elo=$(echo "$JSONLINES" | jq -s '[.[].corrected_elo] | add / length')
-
-# Second pass: write CSV with mean and per-game difference
-{
-    echo "game_file,white,black,white_elo_hdr,black_elo_hdr,raw_elo,corrected_elo,peak_rate,n_evaluations,sampled,diff_from_mean"
-    echo "$JSONLINES" | jq -r --arg mean "$mean_elo" '
-        . as $r |
-        ($r.corrected_elo - ($mean | tonumber)) as $diff |
-        [
-            ($r.white + " vs " + $r.black),
-            $r.white,
-            $r.black,
-            ($r.white_elo_hdr | tostring),
-            ($r.black_elo_hdr | tostring),
-            ($r.raw_elo | tostring),
-            ($r.corrected_elo | tostring),
-            ($r.peak_rate | tostring),
-            (if $r.n_evaluations then ($r.n_evaluations | tostring) else "null" end),
-            (if $r.sampled then "true" else "false" end),
-            ($diff | tostring)
-        ] | @csv
-    '
-} > "$CSV_FILE"
-
-echo "JSON written to: $JSON_FILE"
-echo "CSV written to:  $CSV_FILE"
-echo "Mean corrected ELO: $mean_elo"
+avg=$((total_seconds / count))
+echo "Avg wall time: ${avg}s per game"
 echo ""
-head -5 "$CSV_FILE"
-echo "..."
-echo "(total $count games)"
+echo "CSV written to: $CSV_FILE"

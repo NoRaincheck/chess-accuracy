@@ -111,3 +111,32 @@ WhiteElo: 3225, BlackElo: 3151
 Estimated:  W   2876   B   2658  (rate 63.8%)
 PGN ref:    W   3225   B   3151
 ```
+
+**Hold Out Results**
+
+```
+$ ./estimate_all.sh
+  [  5s] 1000-1400_huEchdBz.pgn                W:   1362 -> 2066.7 (+704.7)  B:   1170 -> 1666.7 (+496.7)
+  [  2s] 1000-1400_mk9moDDq.pgn                W:   1248 -> 1866.7 (+618.7)  B:   1190 -> 1200.0 (+10.0)
+  [  7s] 1000-1400_yMk3fTsK.pgn                W:   1157 ->  666.7 (-490.3)  B:   1240 ->  533.3 (-706.7)
+  [  5s] 1700-2100_QK5egQTl.pgn                W:   1842 -> 2066.7 (+224.7)  B:   1857 -> 2133.3 (+276.3)
+  [  4s] 1700-2100_ROmEhCmX.pgn                W:   1721 -> 2200.0 (+479.0)  B:   1725 -> 2000.0 (+275.0)
+  [  5s] 1700-2100_foe2ahdY.pgn                W:   2063 -> 1600.0 (-463.0)  B:   1821 -> 1533.3 (-287.7)
+  [  5s] 2100+_BMwcT27N.pgn                    W:   2367 -> 2466.7 (+99.7)  B:   2245 -> 2666.7 (+421.7)
+  [  9s] 2100+_Q5mCQ4jR.pgn                    W:   2259 -> 2200.0 (-59.0)  B:   2351 -> 2200.0 (-151.0)
+  [  4s] 2100+_jv6QQCbT.pgn                    W:   2152 -> 2466.7 (+314.7)  B:   2276 -> 1400.0 (-876.0)
+  [  5s] u1000_2b0kEVul.pgn                    W:    889 ->  800.0 (-89.0)  B:    990 -> 1000.0 (+10.0)
+  [  4s] u1000_dSJPzhNR.pgn                    W:    970 -> 1200.0 (+230.0)  B:    871 ->  466.7 (-404.3)
+  [  7s] u1000_fzpcPioo.pgn                    W:    891 ->  600.0 (-291.0)  B:    938 ->  733.3 (-204.7)
+
+Done. Processed 12 file(s) in 62s total.
+
+===== Alignment Summary =====
+Games: 12
+Mean Absolute Error (white): 338.6
+Mean Absolute Error (black): 343.3
+Mean Absolute Error (overall): 341.0
+Avg wall time: 5s per game
+
+CSV written to: /Users/crn/dev/projects/chess-accuracy/elo_results.csv
+```

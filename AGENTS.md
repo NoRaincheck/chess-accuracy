@@ -14,3 +14,8 @@ This repo uses **uv** for Python dependency management and virtual environments.
 - Python: `>=3.10,<3.13`
 - Virtual environment: `.venv` (created by `uv`)
 - Lockfile: `uv.lock`
+
+## Coding Conventions
+
+- Keep `__init__.py` files empty.
+- Keep implementations simple and obvious; prefer clarity over cleverness.
