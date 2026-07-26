@@ -24,7 +24,9 @@ def export(model_name: str = "maia3-5m", opset: int = 14, output_dir: str | None
 
     spec = resolve_model_spec(model_name)
     print(f"Model: {spec.display_name} ({spec.name})")
-    print(f"Config: dim_vit={spec.config['dim_vit']}, heads={spec.config['num_heads']}, blocks={spec.config['num_blocks']}")
+    print(
+        f"Config: dim_vit={spec.config['dim_vit']}, heads={spec.config['num_heads']}, blocks={spec.config['num_blocks']}"
+    )
 
     # Resolve checkpoint
     checkpoint_path = resolve_checkpoint_path(spec)
@@ -56,7 +58,9 @@ def export(model_name: str = "maia3-5m", opset: int = 14, output_dir: str | None
     # Verify forward pass works
     with torch.no_grad():
         logits_move, logits_value, logits_ponder = model(dummy_tokens, dummy_self_elo, dummy_oppo_elo)
-    print(f"Forward pass OK: logits_move={logits_move.shape}, logits_value={logits_value.shape}, logits_ponder={logits_ponder.shape}")
+    print(
+        f"Forward pass OK: logits_move={logits_move.shape}, logits_value={logits_value.shape}, logits_ponder={logits_ponder.shape}"
+    )
 
     # Export to ONNX
     if output_dir is None:
@@ -91,6 +95,7 @@ def export(model_name: str = "maia3-5m", opset: int = 14, output_dir: str | None
     # Verify with onnx checker
     try:
         import onnx
+
         onnx_model = onnx.load(str(onnx_path))
         onnx.checker.check_model(onnx_model)
         print("ONNX model verified OK")

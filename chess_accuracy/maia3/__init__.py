@@ -2,18 +2,18 @@
 
 __version__ = "0.1.0"
 
-from .models import MAIA3Model
 from .model_registry import (
     MODEL_SPECS,
     ModelSpec,
     resolve_checkpoint_path,
     resolve_model_spec,
 )
+from .models import MAIA3Model
 
 __all__ = [
+    "MODEL_SPECS",
     "MAIA3Model",
     "ModelSpec",
-    "MODEL_SPECS",
-    "resolve_model_spec",
     "resolve_checkpoint_path",
+    "resolve_model_spec",
 ]

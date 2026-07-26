@@ -8,7 +8,6 @@ Usage:
 """
 
 import argparse
-import json
 import io
 import math
 from pathlib import Path
@@ -32,9 +31,9 @@ MAX_ELO = 3000
 def _batch_estimate_2d(pgn_text, scan, model_name):
     """Estimate ELO with iterative 2D refinement until grid step < FIDELITY."""
     from chess_accuracy.batch_inference import (
-        load_inference_engine,
-        estimate_elo_batch,
         estimate_elo_2d,
+        estimate_elo_batch,
+        load_inference_engine,
     )
 
     elo_lo, elo_hi = scan["elo_lo"], scan["elo_hi"]
@@ -48,9 +47,7 @@ def _batch_estimate_2d(pgn_text, scan, model_name):
     elo_values = np.arange(elo_lo, elo_hi + 1, FIDELITY, dtype=np.float32)
     n_grid = len(elo_values)
     print(f"Stage 1: 1D sweep ({n_grid} values, step={FIDELITY})...")
-    result = estimate_elo_batch(
-        pgn_text, elo_values, inf_engine, model_name=model_name
-    )
+    result = estimate_elo_batch(pgn_text, elo_values, inf_engine, model_name=model_name)
     best_elo, best_rate = result["best_elo"], result["best_rate"]
     print(f"  -> 1D estimate: {best_elo:.0f} (rate={best_rate:.4f})")
 
@@ -59,9 +56,7 @@ def _batch_estimate_2d(pgn_text, scan, model_name):
 
     # Stage 2: iterative 2D refinement
     margin = (elo_hi - elo_lo) // 2  # start with full range
-    n_axis = int(
-        math.ceil(math.sqrt(n_grid))
-    )  # values per axis, total ≈ n_grid per round
+    n_axis = math.ceil(math.sqrt(n_grid))  # values per axis, total ≈ n_grid per round
     round_num = 0
 
     while True:
@@ -78,10 +73,7 @@ def _batch_estimate_2d(pgn_text, scan, model_name):
         white_elos = np.linspace(w_lo, w_hi, n_axis, dtype=np.float32)
         black_elos = np.linspace(b_lo, b_hi, n_axis, dtype=np.float32)
 
-        print(
-            f"Round {round_num}: 2D refinement "
-            f"({n_axis}x{n_axis}, margin=±{margin:.0f}, step={step:.0f})..."
-        )
+        print(f"Round {round_num}: 2D refinement ({n_axis}x{n_axis}, margin=±{margin:.0f}, step={step:.0f})...")
 
         best_w, best_b, best_rate, _ = estimate_elo_2d(
             pgn_text,
@@ -115,7 +107,7 @@ def estimate(
     white_elo_hdr = game.headers.get("WhiteElo", "?")
     black_elo_hdr = game.headers.get("BlackElo", "?")
 
-    total_moves = sum(1 for _ in game.mainline_moves())
+    sum(1 for _ in game.mainline_moves())
     est_white, est_black, peak_rate, n_evals = _batch_estimate_2d(
         pgn_text,
         {"elo_lo": MIN_ELO, "elo_hi": MAX_ELO},
@@ -126,9 +118,7 @@ def estimate(
     print(f"Game: {white_name} vs {black_name}")
     print(f"WhiteElo: {white_elo_hdr}, BlackElo: {black_elo_hdr}")
     print()
-    print(
-        f"Estimated:  W {est_white:6.0f}   B {est_black:6.0f}  (rate {peak_rate * 100:.1f}%)"
-    )
+    print(f"Estimated:  W {est_white:6.0f}   B {est_black:6.0f}  (rate {peak_rate * 100:.1f}%)")
     print(f"PGN ref:    W {white_elo_hdr:>6s}   B {black_elo_hdr:>6s}")
     print()
 
@@ -146,13 +136,9 @@ def estimate(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Estimate chess player ELO from game moves using maia3"
-    )
+    parser = argparse.ArgumentParser(description="Estimate chess player ELO from game moves using maia3")
     parser.add_argument("pgn", nargs="?", help="PGN file to estimate")
-    parser.add_argument(
-        "--calibrate", action="store_true", help="Calibrate against data/ directory"
-    )
+    parser.add_argument("--calibrate", action="store_true", help="Calibrate against data/ directory")
     parser.add_argument(
         "--sample",
         type=int,
@@ -174,7 +160,7 @@ def main():
     args = parser.parse_args()
 
     pgn_path = Path(args.pgn) if args.pgn else Path("example2.pgn")
-    result = estimate(
+    estimate(
         pgn_path,
         n_sample=args.sample,
         model_name=args.model,

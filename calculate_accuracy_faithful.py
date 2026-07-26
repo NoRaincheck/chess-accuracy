@@ -4,14 +4,14 @@ from pathlib import Path
 import chess
 import chess.engine
 import chess.pgn
+from lczerolens import LczeroBoard, LczeroModel
 from tqdm import tqdm
 
 from chess_accuracy import (
+    faithful_division,
     game_accuracy,
     phase_accuracy,
-    faithful_division,
 )
-from lczerolens import LczeroBoard, LczeroModel
 
 MODEL_ID = "lczerolens/t1-256x10-distilled-swa-2432500"
 MODEL_ID = "lczerolens/BT3-768x15x24h-swa-2790000"
@@ -42,22 +42,16 @@ def annotate_game(pgn_path):
     lz_board = LczeroBoard()
 
     for move in tqdm(game.mainline_moves()):
-        annotated_node = (
-            annotated.add_variation(move)
-            if annotated_node is None
-            else annotated_node.add_variation(move)
-        )
+        annotated_node = annotated.add_variation(move) if annotated_node is None else annotated_node.add_variation(move)
         lz_board.push(move)
         game = game.next()
         board = game.board().copy()
         boards.append(board)
         output = model.forward(lz_board)
-        cp, win_pct = wdl_to_white_cp_and_winpct(
-            output["wdl"].squeeze(), board.turn == chess.WHITE
-        )
+        cp, win_pct = wdl_to_white_cp_and_winpct(output["wdl"].squeeze(), board.turn == chess.WHITE)
         white_pov_cps.append(cp)
         white_pov_winpcts.append(win_pct)
-        pov_score = chess.engine.PovScore(chess.engine.Cp(int(round(cp))), chess.WHITE)
+        pov_score = chess.engine.PovScore(chess.engine.Cp(round(cp)), chess.WHITE)
         annotated_node.set_eval(pov_score)
 
     return annotated, white_pov_cps, white_pov_winpcts, boards

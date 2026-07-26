@@ -28,17 +28,14 @@ MAX_ELO = 3000
 
 
 def roundup(x):
-    return int(math.ceil(x / 100.0)) * 100
+    return math.ceil(x / 100.0) * 100
 
 
 def rounddown(x):
-    return int(math.floor(x / 100.0)) * 100
+    return math.floor(x / 100.0) * 100
 
 
-
-def _build_single_color_tensors(
-    positions, elo_values, cfg, color_is_white, n_sample=0, opponent_elo=1500
-):
+def _build_single_color_tensors(positions, elo_values, cfg, color_is_white, n_sample=0, opponent_elo=1500):
     """Build batch tensors for one color's positions only.
 
     For each position of the target color, evaluates all candidate ELO values
@@ -47,10 +44,9 @@ def _build_single_color_tensors(
     Returns dict with tokens, self_elos, oppo_elos, human_moves, legal_masks,
     n_positions, n_elos.
     """
-    from chess_accuracy.maia3.dataset import get_historical_tokens, tokenize_board
+    from chess_accuracy.maia3.dataset import get_historical_tokens, get_legal_moves_mask, tokenize_board
     from chess_accuracy.maia3.utils import get_all_possible_moves
     from chess_accuracy.pgn_parser import _select_sample_indices, move_to_index
-    from chess_accuracy.maia3.dataset import get_legal_moves_mask
 
     ALL_MOVES = get_all_possible_moves()
     ALL_MOVES_DICT = {m: i for i, m in enumerate(ALL_MOVES)}
@@ -58,9 +54,7 @@ def _build_single_color_tensors(
     n_elo = len(elo_values)
 
     # Filter positions to target color
-    color_positions = [
-        pos for pos in positions if pos["is_white_turn"] == color_is_white
-    ]
+    color_positions = [pos for pos in positions if pos["is_white_turn"] == color_is_white]
 
     if not color_positions:
         return {
@@ -79,7 +73,7 @@ def _build_single_color_tensors(
     else:
         sample_indices = list(range(len(color_positions)))
 
-    n_pos = len(sample_indices)
+    len(sample_indices)
 
     # We need to replay the full game to build correct history tokens
     # But only keep tokens for positions of the target color
@@ -155,9 +149,7 @@ def _build_single_color_tensors(
     }
 
 
-def _batch_estimate_single_color(
-    pgn_text, elo_values, inf_engine, cfg, color_is_white, model_name, opponent_elo=1500
-):
+def _batch_estimate_single_color(pgn_text, elo_values, inf_engine, cfg, color_is_white, model_name, opponent_elo=1500):
     """Run 1D ELO sweep for a single color, opponent fixed at 1500."""
     from chess_accuracy.pgn_parser import parse_pgn_to_positions
 
@@ -165,9 +157,7 @@ def _batch_estimate_single_color(
     if not positions:
         return 0.0, 0.0, np.zeros(len(elo_values))
 
-    batch = _build_single_color_tensors(
-        positions, elo_values, cfg, color_is_white, opponent_elo=opponent_elo
-    )
+    batch = _build_single_color_tensors(positions, elo_values, cfg, color_is_white, opponent_elo=opponent_elo)
 
     n_pos = batch["n_positions"]
     n_elo = batch["n_elos"]
@@ -212,9 +202,10 @@ def _batch_estimate_single_color(
 
 def _batch_estimate_separate(pgn_text, scan, model_name):
     """Estimate ELO with Stage 1 1D sweep + Stage 2 separate-color refinement."""
-    from chess_accuracy.batch_inference import load_inference_engine, estimate_elo_batch
-    from chess_accuracy.maia3.model_registry import resolve_model_spec
     from types import SimpleNamespace
+
+    from chess_accuracy.batch_inference import estimate_elo_batch, load_inference_engine
+    from chess_accuracy.maia3.model_registry import resolve_model_spec
 
     elo_lo, elo_hi = scan["elo_lo"], scan["elo_hi"]
     elo_lo = max(elo_lo, MIN_ELO)
@@ -230,9 +221,7 @@ def _batch_estimate_separate(pgn_text, scan, model_name):
     elo_values = np.arange(elo_lo, elo_hi + 1, 200, dtype=np.float32)
     n_grid = len(elo_values)
     print(f"Stage 1: 1D sweep ({n_grid} values, step={FIDELITY})...")
-    best_elo, best_rate, _ = estimate_elo_batch(
-        pgn_text, elo_values, inf_engine, model_name=model_name
-    )
+    best_elo, best_rate, _ = estimate_elo_batch(pgn_text, elo_values, inf_engine, model_name=model_name)
     print(f"  -> 1D estimate: {best_elo:.0f} (rate={best_rate:.4f})")
 
     n_evals = n_grid
@@ -241,13 +230,11 @@ def _batch_estimate_separate(pgn_text, scan, model_name):
     # Start with a tight margin around the Stage 1 estimate to avoid wandering
     # to ELO extremes where the model's predictions are flat/undifferentiated.
     margin = min(400, (elo_hi - elo_lo) // 2)
-    n_axis = int(math.ceil(math.sqrt(n_grid)))
+    n_axis = math.ceil(math.sqrt(n_grid))
     round_num = 0
     best_w, best_b = best_elo, best_elo
     # if opponent_elo is < 1500 then round up to nearest 100, else round down to nearest 100
-    opponent_elo = (
-        roundup(best_elo + 50) if best_elo < 1500 else rounddown(best_elo - 50)
-    )
+    opponent_elo = roundup(best_elo + 50) if best_elo < 1500 else rounddown(best_elo - 50)
 
     while True:
         step = (margin * 2) / max(n_axis - 1, 1)
@@ -291,10 +278,7 @@ def _batch_estimate_separate(pgn_text, scan, model_name):
         best_rate = (w_rate + b_rate) / 2
         n_evals += n_axis * 2
 
-        tqdm.write(
-            f"  -> W={best_w:.0f} (rate={w_rate:.4f}), "
-            f"B={best_b:.0f} (rate={b_rate:.4f})"
-        )
+        tqdm.write(f"  -> W={best_w:.0f} (rate={w_rate:.4f}), B={best_b:.0f} (rate={b_rate:.4f})")
 
         margin = int(margin / 2)
 
@@ -317,7 +301,7 @@ def estimate(
     white_elo_hdr = game.headers.get("WhiteElo", "?")
     black_elo_hdr = game.headers.get("BlackElo", "?")
 
-    total_moves = sum(1 for _ in game.mainline_moves())
+    sum(1 for _ in game.mainline_moves())
     est_white, est_black, peak_rate, n_evals = _batch_estimate_separate(
         pgn_text,
         {"elo_lo": MIN_ELO, "elo_hi": MAX_ELO},
@@ -328,9 +312,7 @@ def estimate(
     print(f"Game: {white_name} vs {black_name}")
     print(f"WhiteElo: {white_elo_hdr}, BlackElo: {black_elo_hdr}")
     print()
-    print(
-        f"Estimated:  W {est_white:6.0f}   B {est_black:6.0f}  (rate {peak_rate * 100:.1f}%)"
-    )
+    print(f"Estimated:  W {est_white:6.0f}   B {est_black:6.0f}  (rate {peak_rate * 100:.1f}%)")
     print(f"PGN ref:    W {white_elo_hdr:>6s}   B {black_elo_hdr:>6s}")
     print()
 
@@ -352,9 +334,7 @@ def main():
         description="Estimate chess player ELO from game moves using maia3 (separate per-color)"
     )
     parser.add_argument("pgn", nargs="?", help="PGN file to estimate")
-    parser.add_argument(
-        "--calibrate", action="store_true", help="Calibrate against data/ directory"
-    )
+    parser.add_argument("--calibrate", action="store_true", help="Calibrate against data/ directory")
     parser.add_argument(
         "--sample",
         type=int,
@@ -370,7 +350,7 @@ def main():
     args = parser.parse_args()
 
     pgn_path = Path(args.pgn) if args.pgn else Path("example2.pgn")
-    result = estimate(
+    estimate(
         pgn_path,
         n_sample=args.sample,
         model_name=args.model,

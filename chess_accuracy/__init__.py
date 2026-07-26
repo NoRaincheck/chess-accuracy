@@ -1,18 +1,18 @@
 from chess_accuracy.common import (
-    win_percentage_from_white_cp,
+    Division,
     accuracy_from_win_percentage,
     game_accuracy,
     phase_accuracy,
-    Division,
+    win_percentage_from_white_cp,
 )
-from chess_accuracy.divider import heuristic_division, faithful_division
+from chess_accuracy.divider import faithful_division, heuristic_division
 
 __all__ = [
-    "win_percentage_from_white_cp",
-    "accuracy_from_win_percentage",
-    "game_accuracy",
-    "phase_accuracy",
-    "heuristic_division",
-    "faithful_division",
     "Division",
+    "accuracy_from_win_percentage",
+    "faithful_division",
+    "game_accuracy",
+    "heuristic_division",
+    "phase_accuracy",
+    "win_percentage_from_white_cp",
 ]

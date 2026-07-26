@@ -1,9 +1,10 @@
 import os
 import random
+from pathlib import Path
+
+import chess
 import numpy as np
 import torch
-import chess
-from pathlib import Path
 
 CODE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = CODE_DIR.parent
@@ -11,7 +12,7 @@ REPO_ROOT = CODE_DIR.parent
 
 def seed_everything(seed: int):
     random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
@@ -30,16 +31,16 @@ def get_all_possible_moves():
             for target_rank in range(8):
                 for target_file in range(8):
                     target_square = chess.square(target_file, target_rank)
-                    move = chess.Move(square, target_square)
+                    chess.Move(square, target_square)
                     all_moves.append(chess.square_name(square) + chess.square_name(target_square))
 
     # NOTE: promotions will always be from rank 7 to rank 8, because we are flipping
     # the board for black to move. So we only need to consider white pawn promotions.
     promotions = []
-    for file_from in 'abcdefgh':
-        for file_to in 'abcdefgh':
-            for piece in ['q', 'r', 'b', 'n']:
-                promotions.append(f'{file_from}7{file_to}8{piece}')
+    for file_from in "abcdefgh":
+        for file_to in "abcdefgh":
+            for piece in ["q", "r", "b", "n"]:
+                promotions.append(f"{file_from}7{file_to}8{piece}")
 
     all_moves.extend(promotions)
 

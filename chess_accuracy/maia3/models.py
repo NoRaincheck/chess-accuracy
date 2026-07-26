@@ -1,9 +1,10 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import math
+
 import chess
 import numpy as np
+import torch
+import torch.nn.functional as F
+from torch import nn
 
 
 # ── ONNX-compatible RMSNorm ──────────────────────────────────────────────────
@@ -135,7 +136,9 @@ class MHA(nn.Module):
 
         if not self.use_gab and not self.use_relative_bias:
             return self.mha(
-                query, key, value,
+                query,
+                key,
+                value,
                 need_weights=need_weights,
                 attn_mask=attn_mask,
                 **kwargs,
@@ -154,7 +157,9 @@ class MHA(nn.Module):
             bias = bias + attn_mask.to(dtype=query.dtype)
 
         return self.mha(
-            query, key, value,
+            query,
+            key,
+            value,
             need_weights=need_weights,
             attn_mask=bias,
             **kwargs,
@@ -247,11 +252,7 @@ class CustomTransformerEncoder(nn.Module):
     def forward(self, x, attn_mask=None):
         if attn_mask is not None and attn_mask.dim() == 3:
             b, t, _ = attn_mask.shape
-            attn_mask = (
-                attn_mask.unsqueeze(1)
-                .expand(-1, self.heads, -1, -1)
-                .reshape(b * self.heads, t, t)
-            )
+            attn_mask = attn_mask.unsqueeze(1).expand(-1, self.heads, -1, -1).reshape(b * self.heads, t, t)
         for blk in self.layers:
             x = blk(x, attn_mask=attn_mask)
         return self.norm(x)
@@ -270,9 +271,7 @@ class MAIA3Model(nn.Module):
         nn.init.xavier_normal_(self.elo_embedding_high.weight)
 
         time_info_dims = 4 if cfg.include_time_info else 1
-        self.token_projection = nn.Linear(
-            12 * cfg.history + time_info_dims - 1 + 2 * cfg.dim_emb, cfg.dim_vit
-        )
+        self.token_projection = nn.Linear(12 * cfg.history + time_info_dims - 1 + 2 * cfg.dim_emb, cfg.dim_vit)
 
         if cfg.use_gab:
             self.gab_shared_weight = nn.Parameter(torch.empty(64 * 64, cfg.gab_gen_size))
@@ -316,9 +315,9 @@ class MAIA3Model(nn.Module):
 
     def forward(self, tokens, self_elos, oppo_elos):
         if self.cfg.include_time_info:
-            tokens = tokens[:, :, :12 * self.cfg.history + 4 - 1]
+            tokens = tokens[:, :, : 12 * self.cfg.history + 4 - 1]
         else:
-            tokens = tokens[:, :, :12 * self.cfg.history]
+            tokens = tokens[:, :, : 12 * self.cfg.history]
 
         self_elo_embs = self.interpolate_elo(self_elos)
         oppo_elo_embs = self.interpolate_elo(oppo_elos)
@@ -335,9 +334,7 @@ class MAIA3Model(nn.Module):
 
         sq_from = self.proj_sq_from(x[:, :64, :])
         sq_to = self.proj_sq_to(x[:, :64, :])
-        scores_base = torch.einsum("bid,bjd->bij", sq_from, sq_to) / math.sqrt(
-            self.cfg.head_hid_dim
-        )
+        scores_base = torch.einsum("bid,bjd->bij", sq_from, sq_to) / math.sqrt(self.cfg.head_hid_dim)
         scores_flat = scores_base.reshape(x.size(0), 64 * 64)
 
         rank7_indices = RANK7_INDICES

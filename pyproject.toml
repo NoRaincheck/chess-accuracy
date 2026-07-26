@@ -17,6 +17,16 @@ dependencies = [
     "tqdm",
 ]
 
-[project.optional-dependencies]
-gui = ["dearpygui>=1.11.1"]
-build = ["pyinstaller>=6.10.0"]
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+extend-select = ["I"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.0",
+    "ty>=0.0.63",
+]
+

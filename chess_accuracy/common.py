@@ -28,9 +28,7 @@ def game_accuracy(white_pov_cps, start_color="white", as_winpcts=False):
     if as_winpcts:
         win_pcts = [50.0] + [float(wp) for wp in white_pov_cps]
     else:
-        win_pcts = [50.0] + [
-            float(win_percentage_from_white_cp(cp)) for cp in white_pov_cps
-        ]
+        win_pcts = [50.0] + [float(win_percentage_from_white_cp(cp)) for cp in white_pov_cps]
 
     window_size = max(2, min(8, n // 10))
     if len(win_pcts) < 2:
@@ -38,10 +36,7 @@ def game_accuracy(white_pov_cps, start_color="white", as_winpcts=False):
     actual_window = min(window_size, len(win_pcts))
 
     windows = [win_pcts[:actual_window]] * max(0, actual_window - 2)
-    windows += [
-        win_pcts[i : i + actual_window]
-        for i in range(len(win_pcts) - actual_window + 1)
-    ]
+    windows += [win_pcts[i : i + actual_window] for i in range(len(win_pcts) - actual_window + 1)]
 
     weights = []
     for w in windows:
@@ -103,9 +98,7 @@ def phase_accuracy(white_pov_cps, division, start_color="white", as_winpcts=Fals
     phases = {}
 
     if middle_ply is None or middle_ply >= len(white_pov_cps):
-        phases["opening"] = game_accuracy(
-            white_pov_cps, start_color, as_winpcts=as_winpcts
-        )
+        phases["opening"] = game_accuracy(white_pov_cps, start_color, as_winpcts=as_winpcts)
         return phases
 
     opening_cps = white_pov_cps[:middle_ply]
@@ -113,19 +106,13 @@ def phase_accuracy(white_pov_cps, division, start_color="white", as_winpcts=Fals
 
     if end_ply is None or end_ply >= len(white_pov_cps):
         middle_cps = white_pov_cps[middle_ply:]
-        phases["middlegame"] = game_accuracy(
-            middle_cps, segment_start(middle_ply), as_winpcts=as_winpcts
-        )
+        phases["middlegame"] = game_accuracy(middle_cps, segment_start(middle_ply), as_winpcts=as_winpcts)
         return phases
 
     middle_cps = white_pov_cps[middle_ply:end_ply]
-    phases["middlegame"] = game_accuracy(
-        middle_cps, segment_start(middle_ply), as_winpcts=as_winpcts
-    )
+    phases["middlegame"] = game_accuracy(middle_cps, segment_start(middle_ply), as_winpcts=as_winpcts)
 
     end_cps = white_pov_cps[end_ply:]
-    phases["endgame"] = game_accuracy(
-        end_cps, segment_start(end_ply), as_winpcts=as_winpcts
-    )
+    phases["endgame"] = game_accuracy(end_cps, segment_start(end_ply), as_winpcts=as_winpcts)
 
     return phases

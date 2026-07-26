@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-
 CHECKPOINT_EXTENSIONS = (".pt", ".pth", ".ckpt", ".bin")
 
 
@@ -121,10 +120,7 @@ def _normalize_key(value: str) -> str:
 
 def _looks_like_local_checkpoint_path(value: str) -> bool:
     path = Path(value).expanduser()
-    return (
-        value.startswith(("/", "./", "../", "~"))
-        or path.suffix.lower() in CHECKPOINT_EXTENSIONS
-    )
+    return value.startswith(("/", "./", "../", "~")) or path.suffix.lower() in CHECKPOINT_EXTENSIONS
 
 
 def _alias_map() -> dict[str, ModelSpec]:
@@ -207,8 +203,7 @@ def resolve_model_spec(model: str) -> ModelSpec:
 
     available = ", ".join(spec.name for spec in MODEL_SPECS)
     raise ModelResolutionError(
-        f"Unknown model '{model}'. Use one of: {available}, a Hugging Face repo ID, "
-        "or a Hugging Face model URL."
+        f"Unknown model '{model}'. Use one of: {available}, a Hugging Face repo ID, or a Hugging Face model URL."
     )
 
 
@@ -295,26 +290,16 @@ def _select_checkpoint_filename(
     try:
         from huggingface_hub import HfApi
     except ImportError as exc:
-        raise ModelResolutionError(
-            "Auto-discovering Hugging Face checkpoint files requires huggingface-hub."
-        ) from exc
+        raise ModelResolutionError("Auto-discovering Hugging Face checkpoint files requires huggingface-hub.") from exc
 
     try:
         files = HfApi().list_repo_files(repo_id=repo_id, revision=revision, token=token)
     except Exception as exc:
-        raise ModelResolutionError(
-            f"Could not list files in Hugging Face repo {repo_id}."
-        ) from exc
+        raise ModelResolutionError(f"Could not list files in Hugging Face repo {repo_id}.") from exc
 
-    candidates = [
-        file
-        for file in files
-        if file.lower().endswith(CHECKPOINT_EXTENSIONS)
-    ]
+    candidates = [file for file in files if file.lower().endswith(CHECKPOINT_EXTENSIONS)]
     if not candidates:
-        raise ModelResolutionError(
-            f"No checkpoint file with extension {CHECKPOINT_EXTENSIONS} found in {repo_id}."
-        )
+        raise ModelResolutionError(f"No checkpoint file with extension {CHECKPOINT_EXTENSIONS} found in {repo_id}.")
 
     if len(candidates) == 1:
         return candidates[0]
@@ -334,6 +319,5 @@ def _select_checkpoint_filename(
 
     options = ", ".join(candidates)
     raise ModelResolutionError(
-        f"Multiple checkpoint files found in {repo_id}: {options}. "
-        "Pass `--checkpoint-filename <file>` to choose one."
+        f"Multiple checkpoint files found in {repo_id}: {options}. Pass `--checkpoint-filename <file>` to choose one."
     )

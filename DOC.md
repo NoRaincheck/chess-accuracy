@@ -44,9 +44,9 @@ The constants in the Lichess source code are full double-precision values from a
 
 ```python
 # Sample data used for fitting:
-xs = [   0,   5,  10,  20,  40,  60,   80,  90, 100]  # WinDiff
-ys = [ 100,  75,  60,  42,  20,   5,    0,   0,   0]  # Accuracy
-sigma = [0.005, 1, 1, 1, 1, 1, 0.005, 1, 1]           # error stdev
+xs = [0, 5, 10, 20, 40, 60, 80, 90, 100]  # WinDiff
+ys = [100, 75, 60, 42, 20, 5, 0, 0, 0]  # Accuracy
+sigma = [0.005, 1, 1, 1, 1, 1, 0.005, 1, 1]  # error stdev
 
 # Result (from lichess source):
 a = 103.1668100711649

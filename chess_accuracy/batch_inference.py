@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import numpy as np
 import torch
 
-from .maia3.model_registry import resolve_checkpoint_path, resolve_model_spec
+from .maia3.model_registry import resolve_model_spec
 from .pgn_parser import (
     build_batch_tensors,
     build_batch_tensors_2d,
@@ -40,12 +40,8 @@ class BatchMaia3Inference:
         """
         ort_inputs = {
             "tokens": tokens.numpy() if isinstance(tokens, torch.Tensor) else tokens,
-            "self_elos": self_elos.numpy()
-            if isinstance(self_elos, torch.Tensor)
-            else self_elos,
-            "oppo_elos": oppo_elos.numpy()
-            if isinstance(oppo_elos, torch.Tensor)
-            else oppo_elos,
+            "self_elos": self_elos.numpy() if isinstance(self_elos, torch.Tensor) else self_elos,
+            "oppo_elos": oppo_elos.numpy() if isinstance(oppo_elos, torch.Tensor) else oppo_elos,
         }
         return self.session.run(None, ort_inputs)
 
@@ -144,9 +140,7 @@ def estimate_elo_batch(
     n_elo = batch["n_elos"]
 
     # Run single forward pass
-    logits_move, logits_value, logits_ponder = inference_engine.predict(
-        tokens, self_elos, oppo_elos
-    )
+    logits_move, _logits_value, _logits_ponder = inference_engine.predict(tokens, self_elos, oppo_elos)
 
     # logits_move: (N*M, 4352) -> reshape to (N, M, 4352)
     logits_move = logits_move.reshape(n_pos, n_elo, -1)
@@ -199,9 +193,7 @@ def estimate_elo_2d(
     if not positions:
         return 0.0, 0.0, 0.0, np.zeros((len(white_elo_values), len(black_elo_values)))
 
-    batch = build_batch_tensors_2d(
-        positions, white_elo_values, black_elo_values, cfg, n_sample=0
-    )
+    batch = build_batch_tensors_2d(positions, white_elo_values, black_elo_values, cfg, n_sample=0)
 
     tokens = batch["tokens"]
     self_elos = batch["self_elos"]
@@ -230,9 +222,7 @@ def estimate_elo_2d(
 
     # Sum matches per grid cell, then reshape to (W, B)
     match_counts = matches.sum(axis=0)  # (W*B,)
-    rate_grid = (
-        (match_counts / n_pos).reshape(n_w, n_b) if n_pos > 0 else np.zeros((n_w, n_b))
-    )
+    rate_grid = (match_counts / n_pos).reshape(n_w, n_b) if n_pos > 0 else np.zeros((n_w, n_b))
 
     # Find best
     best_idx = np.unravel_index(np.argmax(rate_grid), rate_grid.shape)
@@ -254,9 +244,7 @@ def _eval_2d_grid(
     alpha: float = 0.6,
 ) -> np.ndarray:
     """Evaluate a 2D ELO grid, returning rate_grid (W, B)."""
-    batch = build_batch_tensors_2d(
-        positions, white_elo_values, black_elo_values, cfg, n_sample=n_sample
-    )
+    batch = build_batch_tensors_2d(positions, white_elo_values, black_elo_values, cfg, n_sample=n_sample)
     tokens = batch["tokens"]
     self_elos = batch["self_elos"]
     oppo_elos = batch["oppo_elos"]

@@ -46,13 +46,14 @@ def parse_pgn_to_positions(pgn_text: str) -> list[dict]:
 
         # Extract [%clk H:MM:SS] from comment
         import re
-        clk_match = re.search(r'\[%clk\s+(\d+):(\d+):(\d+(?:\.\d+)?)\]', comment)
+
+        clk_match = re.search(r"\[%clk\s+(\d+):(\d+):(\d+(?:\.\d+)?)\]", comment)
         if clk_match:
             h, m, s = int(clk_match.group(1)), int(clk_match.group(2)), float(clk_match.group(3))
             clk_before = h * 3600 + m * 60 + s
 
         # Extract [%clk for opponent after ponder]
-        clk_opp_match = re.search(r'\[%clk_opp\s+(\d+):(\d+):(\d+(?:\.\d+)?)\]', comment)
+        clk_opp_match = re.search(r"\[%clk_opp\s+(\d+):(\d+):(\d+(?:\.\d+)?)\]", comment)
         if clk_opp_match:
             h, m, s = int(clk_opp_match.group(1)), int(clk_opp_match.group(2)), float(clk_opp_match.group(3))
             clk_ponder = h * 3600 + m * 60 + s
@@ -62,13 +63,15 @@ def parse_pgn_to_positions(pgn_text: str) -> list[dict]:
         move = next_node.move
         clk_before, clk_ponder = clocks.get(ply, (300.0, 0.0))
 
-        positions.append({
-            "board": board.copy(),
-            "move": move,
-            "is_white_turn": board.turn == chess.WHITE,
-            "clk_left_before": clk_before,
-            "clk_ponder": clk_ponder,
-        })
+        positions.append(
+            {
+                "board": board.copy(),
+                "move": move,
+                "is_white_turn": board.turn == chess.WHITE,
+                "clk_left_before": clk_before,
+                "clk_ponder": clk_ponder,
+            }
+        )
 
         board.push(move)
         node = next_node
@@ -96,15 +99,15 @@ def move_to_index(move: chess.Move, board: chess.Board) -> int:
 
     # Promotion fallback (shouldn't happen if ALL_MOVES is correct, but be safe)
     if len(move_uci) > 4:
-        from_file = ord(move_uci[0]) - ord('a')
-        to_file = ord(move_uci[2]) - ord('a')
-        piece_map = {'q': 0, 'r': 1, 'b': 2, 'n': 3}
+        from_file = ord(move_uci[0]) - ord("a")
+        to_file = ord(move_uci[2]) - ord("a")
+        piece_map = {"q": 0, "r": 1, "b": 2, "n": 3}
         piece_idx = piece_map[move_uci[4]]
         return 4096 + from_file * 32 + to_file * 4 + piece_idx
 
     # Standard move fallback
-    from_idx = ord(move_uci[0]) - ord('a') + (int(move_uci[1]) - 1) * 8
-    to_idx = ord(move_uci[2]) - ord('a') + (int(move_uci[3]) - 1) * 8
+    from_idx = ord(move_uci[0]) - ord("a") + (int(move_uci[1]) - 1) * 8
+    to_idx = ord(move_uci[2]) - ord("a") + (int(move_uci[3]) - 1) * 8
     return from_idx * 64 + to_idx
 
 
@@ -185,8 +188,10 @@ def build_batch_tensors(
 
         if pos_idx in sampled_set:
             hist_tokens = get_historical_tokens(
-                history, cfg,
-                base=300.0, inc=0.0,
+                history,
+                cfg,
+                base=300.0,
+                inc=0.0,
                 clk_left_before=pos["clk_left_before"],
                 clk_ponder=pos["clk_ponder"],
             )
@@ -206,7 +211,7 @@ def build_batch_tensors(
     legal_masks = torch.stack(all_legal_masks, dim=0)  # (N, 4352)
 
     if not cfg.include_time_info:
-        tokens_n = tokens_n[:, :, :12 * cfg.history]
+        tokens_n = tokens_n[:, :, : 12 * cfg.history]
 
     tokens_batch = tokens_n.repeat_interleave(n_elo, dim=0)
 
@@ -280,8 +285,10 @@ def build_batch_tensors_2d(
 
         if pos_idx in sampled_set:
             hist_tokens = get_historical_tokens(
-                history, cfg,
-                base=300.0, inc=0.0,
+                history,
+                cfg,
+                base=300.0,
+                inc=0.0,
                 clk_left_before=pos["clk_left_before"],
                 clk_ponder=pos["clk_ponder"],
             )
@@ -298,7 +305,7 @@ def build_batch_tensors_2d(
     is_white = np.array(all_is_white, dtype=bool)  # (N,)
 
     if not cfg.include_time_info:
-        tokens_n = tokens_n[:, :, :12 * cfg.history]
+        tokens_n = tokens_n[:, :, : 12 * cfg.history]
 
     # Build ELO tensors for the 2D grid
     # Grid: for each position, replicate across all (W, B) combinations

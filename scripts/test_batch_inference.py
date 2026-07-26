@@ -5,11 +5,9 @@ Verifies that the batch ONNX approach produces correct results by comparing
 against the PyTorch model and checking numerical accuracy.
 """
 
-import io
 import time
+from types import SimpleNamespace
 
-import chess
-import chess.pgn
 import numpy as np
 import torch
 
@@ -18,10 +16,8 @@ from chess_accuracy.maia3.model_registry import resolve_checkpoint_path, resolve
 from chess_accuracy.maia3.models import MAIA3Model
 from chess_accuracy.pgn_parser import (
     build_batch_tensors,
-    move_to_index,
     parse_pgn_to_positions,
 )
-from types import SimpleNamespace
 
 
 def test_pgn_parser():
@@ -82,7 +78,9 @@ def test_onnx_vs_pytorch():
         ponder_diff = np.max(np.abs(pt_ponder.numpy() - onnx_ponder))
 
         status = "OK" if move_diff < 1e-4 else "FAIL"
-        print(f"  {pgn_file}: move_diff={move_diff:.2e}, value_diff={value_diff:.2e}, ponder_diff={ponder_diff:.2e} [{status}]")
+        print(
+            f"  {pgn_file}: move_diff={move_diff:.2e}, value_diff={value_diff:.2e}, ponder_diff={ponder_diff:.2e} [{status}]"
+        )
 
     print("  PASSED\n")
 
@@ -90,8 +88,6 @@ def test_onnx_vs_pytorch():
 def test_legal_move_masking():
     """Verify legal move masking changes the top-1 prediction."""
     print("=== Legal Move Masking ===")
-    from chess_accuracy.maia3.dataset import get_legal_moves_mask
-    from chess_accuracy.maia3.utils import get_all_possible_moves
 
     onnx_engine = BatchMaia3Inference("chess_accuracy/maia3/onnx/maia3-5m.onnx")
     spec = resolve_model_spec("maia3-5m")
@@ -130,7 +126,7 @@ def test_batch_estimate():
         elo_values = np.arange(300, 3501, 50, dtype=np.float32)
 
         t0 = time.time()
-        best_elo, best_rate, all_rates = estimate_elo_batch(
+        best_elo, best_rate, _all_rates = estimate_elo_batch(
             pgn, elo_values, onnx_engine, model_name="maia3-5m", n_sample=0
         )
         elapsed = time.time() - t0

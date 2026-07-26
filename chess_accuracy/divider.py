@@ -99,11 +99,7 @@ def faithful_division(boards):
 
     mid_game = None
     for idx, board in indexed:
-        if (
-            majors_and_minors(board) <= 10
-            or backrank_sparse(board)
-            or mixedness(board) > 150
-        ):
+        if majors_and_minors(board) <= 10 or backrank_sparse(board) or mixedness(board) > 150:
             mid_game = idx
             break
 
