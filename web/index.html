@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chess ELO Estimator</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Chess ELO Estimator</h1>
+      <span class="badge" id="model-status">Loading model...</span>
+    </header>
+
+    <div class="main-layout">
+      <div class="board-section">
+        <div class="board-wrapper">
+          <div id="board-container"></div>
+          <div class="board-controls">
+            <button id="flip-btn" class="btn btn-small" title="Flip board">Flip</button>
+          </div>
+        </div>
+        <div id="movelist-container" class="movelist-panel"></div>
+      </div>
+
+      <div class="side-panel">
+        <div id="results-panel" class="results-panel">
+          <div class="result-row">
+            <span class="player-name" id="white-name">White</span>
+            <span class="elo-value" id="white-elo">—</span>
+          </div>
+          <div class="result-row">
+            <span class="player-name" id="black-name">Black</span>
+            <span class="elo-value" id="black-elo">—</span>
+          </div>
+          <div class="result-detail">
+            <span>Match rate:</span>
+            <span id="match-rate">—</span>
+          </div>
+          <div id="header-info" class="header-info" style="display:none"></div>
+        </div>
+
+        <div id="progress-container" class="progress-container" style="display:none">
+          <div class="progress-bar-track">
+            <div id="progress-bar" class="progress-bar-fill"></div>
+          </div>
+          <span id="progress-text" class="progress-text"></span>
+        </div>
+
+        <div class="input-section">
+          <label for="pgn-input">PGN Game</label>
+          <textarea id="pgn-input" rows="12" placeholder="Paste a PGN game here...&#10;&#10;[Event &quot;Example&quot;]&#10;[White &quot;Player 1&quot;]&#10;[Black &quot;Player 2&quot;]&#10;[Result &quot;1-0&quot;]&#10;&#10;1. e4 e5 2. Nf3 Nc6 ..."></textarea>
+          <div class="input-actions">
+            <button id="example-btn" class="btn btn-secondary">Load Example</button>
+            <button id="estimate-btn" class="btn btn-primary" disabled>Estimate ELO</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      Powered by <a href="https://github.com/UofTCSSLab/Maia3" target="_blank">Maia3</a> neural network
+      &middot; Runs entirely in your browser
+    </footer>
+  </div>
+
+  <!-- Load onnxruntime-web (exposes window.ort) -->
+  <script src="js/ort.min.js"></script>
+  <!-- Load chess.js ESM and expose as window.Chess, then load main app -->
+  <script type="module" src="js/chess-wrapper.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

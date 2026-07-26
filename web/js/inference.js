@@ -1,0 +1,61 @@
+// ONNX model loading and batch inference
+// Mirrors chess_accuracy/batch_inference.py:BatchMaia3Inference
+
+let session = null;
+let modelLoaded = false;
+
+async function loadModel(modelPath, onProgress) {
+  const ort = window.ort;
+
+  if (!ort) throw new Error('ONNX Runtime not loaded');
+
+  // Configure WASM path
+  if (ort.env && ort.env.wasm) {
+    ort.env.wasm.wasmPaths = 'js/';
+    // Disable threading if SharedArrayBuffer not available (GitHub Pages)
+    if (typeof SharedArrayBuffer === 'undefined') {
+      ort.env.wasm.numThreads = 1;
+    }
+  }
+
+  if (onProgress) onProgress('Loading ONNX model...');
+
+  session = await ort.InferenceSession.create(modelPath, {
+    executionProviders: ['wasm'],
+    graphOptimizationLevel: 'all',
+  });
+
+  modelLoaded = true;
+  if (onProgress) onProgress('Model loaded');
+  return session;
+}
+
+function isModelLoaded() {
+  return modelLoaded;
+}
+
+// Run batch inference
+// Returns: { logitsMove: Float32Array (batch, 4352) }
+async function predict(tokens, selfElos, oppoElos) {
+  if (!session) throw new Error('Model not loaded');
+
+  const ort = window.ort;
+  const batchSize = selfElos.length;
+
+  const tokensTensor = new ort.Tensor('float32', tokens, [batchSize, 64, 97]);
+  const selfElosTensor = new ort.Tensor('float32', selfElos, [batchSize]);
+  const oppoElosTensor = new ort.Tensor('float32', oppoElos, [batchSize]);
+
+  const feeds = {
+    tokens: tokensTensor,
+    self_elos: selfElosTensor,
+    oppo_elos: oppoElosTensor,
+  };
+
+  const results = await session.run(feeds);
+  const logitsMove = results['logits_move'].data;
+
+  return { logitsMove };
+}
+
+export { loadModel, isModelLoaded, predict };
