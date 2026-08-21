@@ -9,9 +9,10 @@ import fs from 'node:fs';
 
 import { Chess } from '../../docs/js/chess.esm.js';
 import { ALL_MOVES, mirrorMove, moveIndex, getLegalMovesMask } from '../../docs/js/moves.js';
-import { tokenizeBoard, getHistoricalTokens, buildBatchTensor, buildBatchTensorSingleColor, selectSampleIndices } from '../../docs/js/tensor.js';
+import { tokenizeBoard, getHistoricalTokens, buildBatchTensor, buildBatchTensorSingleColor, buildBatchTensorJoint, capIndices, selectSampleIndices } from '../../docs/js/tensor.js';
 import { parsePgnToPositions } from '../../docs/js/pgn.js';
 import { computeScoreStreaming } from '../../docs/js/scoring.js';
+import { makeGrid, windowGrid, upsampleBilinear, marginalModes } from '../../docs/js/surface.js';
 
 // The browser modules expect window.Chess / window.__moveIndex globals.
 globalThis.window = { Chess, __moveIndex: moveIndex };
@@ -105,6 +106,40 @@ function runAll(input) {
   out.sampling = (input.samplingCases || []).map((c) =>
     Array.from(selectSampleIndices(c.totalMoves, c.nSample))
   );
+
+  // K. Deterministic position cap
+  out.capIndices = (input.capCases || []).map((c) => capIndices(c.indices, c.maxPositions));
+
+  // L. Joint (white, black) batch tensors with informative filtering + cap
+  out.jointBatches = (input.jointGames || []).map((game) => {
+    const parsed = parsePgnToPositions(game.pgn);
+    if (!parsed) return null;
+    const batch = buildBatchTensorJoint(parsed.positions, game.whiteElos, game.blackElos, game.opts);
+    if (!batch) return null;
+    return {
+      tokens: Array.from(batch.tokens),
+      selfElos: Array.from(batch.selfElos),
+      oppoElos: Array.from(batch.oppoElos),
+      humanMoves: Array.from(batch.humanMoves),
+      legalMasks: Array.from(batch.legalMasks),
+      nPositions: batch.nPositions,
+      nElos: batch.nElos,
+      nW: batch.nW,
+      nB: batch.nB,
+    };
+  });
+
+  // M. Surface helpers
+  out.grids = (input.gridCases || []).map((c) => ({
+    make: makeGrid(c.lo, c.hi, c.step),
+    window: windowGrid(c.center, c.margin, c.nPoints, c.lo, c.hi),
+  }));
+  out.upsamples = (input.upsampleCases || []).map((c) => {
+    const src = Float64Array.from(c.src);
+    const dst = upsampleBilinear(src, c.srcW, c.srcB, c.dstW, c.dstB);
+    const modes = marginalModes(dst, c.dstW, c.dstB);
+    return { dst: Array.from(dst), wi: modes.wi, bi: modes.bi };
+  });
 
   // I. PGN parsing
   out.pgns = (input.pgns || []).map((pgn) => {

@@ -144,7 +144,7 @@ def _select_sample_indices(total_moves: int, n_sample: int) -> list[int]:
 
 def informative_indices(
     positions: list[dict],
-    skip_opening: int = 0,
+    skip_opening: int = 8,
     min_legal_moves: int = 2,
 ) -> list[int]:
     """Indices of positions that carry ELO signal.
@@ -161,6 +161,22 @@ def informative_indices(
             continue
         out.append(i)
     return out
+
+
+def cap_indices(indices: list[int], max_positions: int = 0) -> list[int]:
+    """Deterministically thin `indices` to at most `max_positions` entries.
+
+    Keeps evenly spaced entries (including both endpoints), preserving order.
+    `max_positions <= 0` means no cap. Deterministic so repeated runs give
+    identical estimates.
+    """
+    if max_positions <= 0 or len(indices) <= max_positions:
+        return list(indices)
+    if max_positions == 1:
+        return [indices[0]]
+    last = len(indices) - 1
+    picked = sorted({k * last // (max_positions - 1) for k in range(max_positions)})
+    return [indices[i] for i in picked]
 
 
 def build_batch_tensors(

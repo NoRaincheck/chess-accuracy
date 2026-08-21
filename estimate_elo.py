@@ -2,10 +2,13 @@
 Estimate chess player ELO from game moves using maia3.
 
 Default scorer ("loglik") — likelihood fingerprints with uncertainty:
-  Stage 1: 1D log-likelihood sweep (self = opponent = e) over the full range.
-  Stage 2a: joint (white, black) coarse grid over the full range -> per-color modes.
-  Stage 2b: joint fine grid around the modes -> posterior mean / std / 95% CI
-            per color, with a Gaussian population prior.
+  Stage A: sparse joint (white, black) anchor grid over the full range;
+           the smooth log-likelihood surface is bicubically interpolated
+           to localize per-color modes at a fraction of the cost of a
+           dense sweep.
+  Stage B: joint fine grid around the modes -> posterior mean / std / 95% CI
+           per color, with a Gaussian population prior. All reported
+           statistics come from real model evaluations.
 
 Legacy scorer (--scorer legacy) — original top-1+MRR argmax sweeps:
 Stage 1: 1D sweep assuming both players have the same ELO.
@@ -33,12 +36,13 @@ MIN_ELO = 300
 MAX_ELO = 3000
 
 # Log-likelihood scorer configuration
-STAGE1_STEP = 200    # ELO spacing for the stage-1 1D sweep (localization only)
-COARSE_STEP = 250    # stage-2a joint grid spacing (full range)
-FINE_MARGIN = 300    # stage-2b window half-width around per-color modes
-FINE_STEP = 100      # stage-2b grid spacing (point estimates refined by parabola fit)
+ANCHOR_STEP = 550  # stage-A full-range joint anchor grid spacing (localization)
+DENSE_STEP = 50  # interpolated surface resolution (mode finding only, no model evals)
+FINE_MARGIN = 300  # stage-B window half-width around per-color modes
+FINE_STEP = 100  # stage-B grid spacing (point estimates refined by parabola fit)
 PRIOR_MEAN = 1500.0  # Gaussian population prior over player ELO
 PRIOR_STD = 350.0
+DEFAULT_MAX_POSITIONS = 80  # deterministic cap on evaluated positions (0 = all)
 
 
 def roundup(x):
@@ -317,20 +321,24 @@ def _vertex_refine(values: np.ndarray, log_curve: np.ndarray) -> float:
     return float(values[k])
 
 
-def _estimate_posterior(pgn_text: str, model_name: str, quiet: bool = False) -> dict:
+def _estimate_posterior(
+    pgn_text: str,
+    model_name: str,
+    quiet: bool = False,
+    max_positions: int = DEFAULT_MAX_POSITIONS,
+) -> dict:
     """Estimate per-color ELO posteriors via log-likelihood fingerprints."""
     from types import SimpleNamespace
 
     from chess_accuracy.batch_inference import (
         _marginal_stats,
-        curve_posterior,
+        bicubic_upsample_surface,
         joint_posterior_2d,
         load_inference_engine,
-        loglik_1d_sweep,
         loglik_2d_grid,
     )
     from chess_accuracy.maia3.model_registry import resolve_model_spec
-    from chess_accuracy.pgn_parser import informative_indices, parse_pgn_to_positions
+    from chess_accuracy.pgn_parser import cap_indices, informative_indices, parse_pgn_to_positions
 
     def _log(msg):
         if not quiet:
@@ -343,44 +351,58 @@ def _estimate_posterior(pgn_text: str, model_name: str, quiet: bool = False) -> 
     cfg = SimpleNamespace(**spec.config)
 
     positions = parse_pgn_to_positions(pgn_text)
-    indices = informative_indices(positions)
+    indices = cap_indices(informative_indices(positions), max_positions)
     n_pos = len(indices)
 
     if n_pos == 0:
         raise ValueError("No informative positions found in PGN")
 
-    # Stage 1: 1D sweep with self = opponent, full range.
-    stage1_grid = _make_grid(MIN_ELO, MAX_ELO, STAGE1_STEP)
-    _log(f"Stage 1: 1D likelihood sweep ({len(stage1_grid)} values, step={STAGE1_STEP:.0f})...")
-    r1 = loglik_1d_sweep(positions, stage1_grid, cfg, inf_engine, indices=indices)
-    post1 = curve_posterior(r1["curve"], stage1_grid, PRIOR_MEAN, PRIOR_STD)
-    center = post1["mean"]
-    n_evals = len(stage1_grid)
-    _log(f"  -> game center: {center:.0f} (σ={post1['std']:.0f})")
+    # Stage A: sparse joint anchor grid over the full range -> interpolated
+    # surface -> per-color modes. The likelihood surface is very smooth in
+    # (w, b), so a coarse anchor grid plus bicubic interpolation localizes
+    # the modes far more cheaply than a dense sweep. The diagonal of the
+    # anchor surface doubles as the shared-ELO likelihood curve.
+    anchor_grid = _make_grid(MIN_ELO, MAX_ELO, ANCHOR_STEP)
+    _log(f"Stage A: joint anchor grid ({len(anchor_grid)}x{len(anchor_grid)}, step={ANCHOR_STEP:.0f})...")
+    surface_a, _match_a, _ = loglik_2d_grid(positions, anchor_grid, anchor_grid, cfg, inf_engine, indices=indices)
+    n_evals = len(anchor_grid) ** 2
 
-    # Stage 2a: joint coarse grid over the full range -> per-color modes.
-    coarse = _make_grid(MIN_ELO, MAX_ELO, COARSE_STEP)
-    _log(f"Stage 2a: joint coarse grid ({len(coarse)}x{len(coarse)}, step={COARSE_STEP:.0f})...")
-    surface, _match, _ = loglik_2d_grid(positions, coarse, coarse, cfg, inf_engine, indices=indices)
-    joint_a = joint_posterior_2d(surface, coarse, coarse, PRIOR_MEAN, PRIOR_STD)
-    w_mode = float(coarse[int(np.argmax(joint_a.sum(axis=1)))])
-    b_mode = float(coarse[int(np.argmax(joint_a.sum(axis=0)))])
-    n_evals += len(coarse) ** 2
-    _log(f"  -> modes: W={w_mode:.0f}, B={b_mode:.0f}")
+    dense_grid = _make_grid(MIN_ELO, MAX_ELO, DENSE_STEP)
+    dense = bicubic_upsample_surface(surface_a, (len(dense_grid), len(dense_grid)))
+    joint_dense = joint_posterior_2d(dense, dense_grid, dense_grid, PRIOR_MEAN, PRIOR_STD)
+    w_marg_dense = joint_dense.sum(axis=1)
+    b_marg_dense = joint_dense.sum(axis=0)
+    center = 0.5 * float((w_marg_dense * dense_grid).sum() + (b_marg_dense * dense_grid).sum())
+    w_mode = float(dense_grid[int(np.argmax(w_marg_dense))])
+    b_mode = float(dense_grid[int(np.argmax(b_marg_dense))])
+    _log(f"  -> game center: {center:.0f}, modes: W={w_mode:.0f}, B={b_mode:.0f}")
 
-    # Stage 2b: joint fine grid around the modes -> final posteriors.
-    w_grid = _window_grid(w_mode, FINE_MARGIN, FINE_STEP, MIN_ELO, MAX_ELO)
-    b_grid = _window_grid(b_mode, FINE_MARGIN, FINE_STEP, MIN_ELO, MAX_ELO)
-    _log(
-        f"Stage 2b: joint fine grid ({len(w_grid)}x{len(b_grid)}, "
-        f"±{FINE_MARGIN:.0f} @ step={FINE_STEP:.0f})..."
-    )
-    surface2, match2, _ = loglik_2d_grid(positions, w_grid, b_grid, cfg, inf_engine, indices=indices)
-    joint_b = joint_posterior_2d(surface2, w_grid, b_grid, PRIOR_MEAN, PRIOR_STD)
-    n_evals += len(w_grid) * len(b_grid)
+    # Stage B: joint fine grid around the modes -> final posteriors.
+    # If a marginal mode lands on the window edge, the true mode may lie just
+    # outside; slide the window there once and re-evaluate.
+    for attempt in range(2):
+        w_grid = _window_grid(w_mode, FINE_MARGIN, FINE_STEP, MIN_ELO, MAX_ELO)
+        b_grid = _window_grid(b_mode, FINE_MARGIN, FINE_STEP, MIN_ELO, MAX_ELO)
+        _log(
+            f"Stage B{' (re-centered)' if attempt else ''}: joint fine grid "
+            f"({len(w_grid)}x{len(b_grid)}, ±{FINE_MARGIN:.0f} @ step={FINE_STEP:.0f})..."
+        )
+        surface2, match2, _ = loglik_2d_grid(positions, w_grid, b_grid, cfg, inf_engine, indices=indices)
+        n_evals += len(w_grid) * len(b_grid)
 
-    w_post = joint_b.sum(axis=1)
-    b_post = joint_b.sum(axis=0)
+        joint_b = joint_posterior_2d(surface2, w_grid, b_grid, PRIOR_MEAN, PRIOR_STD)
+        w_post = joint_b.sum(axis=1)
+        b_post = joint_b.sum(axis=0)
+
+        wi_best = int(np.argmax(w_post))
+        bi_best = int(np.argmax(b_post))
+        edge_hit = wi_best in (0, len(w_grid) - 1) or bi_best in (0, len(b_grid) - 1)
+        if attempt == 0 and edge_hit:
+            w_mode = float(w_grid[wi_best])
+            b_mode = float(b_grid[bi_best])
+            continue
+        break
+
     _mean_w, std_w, ci_w = _marginal_stats(w_post, w_grid.astype(np.float64))
     _mean_b, std_b, ci_b = _marginal_stats(b_post, b_grid.astype(np.float64))
 
@@ -422,6 +444,7 @@ def estimate(
     model_name="maia3-5m",
     quiet=False,
     scorer="loglik",
+    max_positions=DEFAULT_MAX_POSITIONS,
 ):
     """Estimate ELO for a game."""
     pgn_text = pgn_path.read_text()
@@ -455,7 +478,7 @@ def estimate(
             "sampled": n_sample > 0,
         }
     else:
-        post = _estimate_posterior(pgn_text, model_name, quiet=quiet)
+        post = _estimate_posterior(pgn_text, model_name, quiet=quiet, max_positions=max_positions)
         result = {
             "white": white_name,
             "black": black_name,
@@ -503,6 +526,13 @@ def main():
         help="Sample N positions heuristically",
     )
     parser.add_argument(
+        "--max-positions",
+        type=int,
+        default=DEFAULT_MAX_POSITIONS,
+        metavar="N",
+        help=f"Cap on evaluated positions, evenly spaced (default {DEFAULT_MAX_POSITIONS}; 0 = all)",
+    )
+    parser.add_argument(
         "--model",
         default="maia3-5m",
         help="Maia3 model: maia3-5m, maia3-23m, maia3-79m",
@@ -524,6 +554,7 @@ def main():
         model_name=args.model,
         quiet=args.quiet,
         scorer=args.scorer,
+        max_positions=args.max_positions,
     )
 
     if args.json:

@@ -8,6 +8,7 @@ Run with: uv run pytest tests/parity -v
 """
 
 import json
+import math
 import shutil
 import subprocess
 from collections import deque
@@ -30,6 +31,8 @@ from chess_accuracy.maia3.utils import get_all_possible_moves, mirror_move
 from chess_accuracy.pgn_parser import (
     build_batch_tensors,
     build_batch_tensors_2d,
+    cap_indices,
+    informative_indices,
     move_to_index,
     parse_pgn_to_positions,
 )
@@ -194,6 +197,50 @@ def parity(tmp_path_factory):
             {"totalMoves": 10, "nSample": 10},
             {"totalMoves": 10, "nSample": 99},
             {"totalMoves": 58, "nSample": 20},  # random branch: only shape-checked
+        ],
+        "capCases": [
+            {"indices": list(range(10)), "maxPositions": 0},
+            {"indices": list(range(10)), "maxPositions": 10},
+            {"indices": list(range(10)), "maxPositions": 3},
+            {"indices": list(range(7)), "maxPositions": 1},
+            {"indices": [5, 9, 13, 21, 40, 57, 58, 60, 77, 91], "maxPositions": 4},
+        ],
+        "jointGames": [
+            {
+                "pgn": LONG_CLOCK_PGN,
+                "whiteElos": [800, 1500, 2200],
+                "blackElos": [1000, 1800],
+                "opts": {"skipOpening": 8, "minLegalMoves": 2, "maxPositions": 0},
+            },
+            {
+                "pgn": CASTLE_PGN,
+                "whiteElos": [1200, 2000],
+                "blackElos": [900, 1600, 2400],
+                "opts": {"skipOpening": 8, "minLegalMoves": 2, "maxPositions": 0},
+            },
+            {
+                # cap kicks in: long game capped to 6 positions
+                "pgn": LONG_CLOCK_PGN,
+                "whiteElos": [1300],
+                "blackElos": [1700],
+                "opts": {"skipOpening": 8, "minLegalMoves": 2, "maxPositions": 6},
+            },
+        ],
+        "gridCases": [
+            {"lo": 300, "hi": 3000, "step": 700, "center": 1500, "margin": 300, "nPoints": 4},
+            {"lo": 300, "hi": 3000, "step": 550, "center": 2900, "margin": 400, "nPoints": 7},
+            {"lo": 300, "hi": 3000, "step": 2700, "center": 300, "margin": 50, "nPoints": 1},
+        ],
+        "upsampleCases": [
+            {
+                "src": [1.0, 2.0, 0.5, -1.0, 3.0, 2.5, 0.0, 1.5, 4.0],
+                "srcW": 3,
+                "srcB": 3,
+                "dstW": 7,
+                "dstB": 9,
+            },
+            {"src": [2.0], "srcW": 1, "srcB": 1, "dstW": 5, "dstB": 5},
+            {"src": [0.0, 1.0, 4.0, 9.0], "srcW": 2, "srcB": 2, "dstW": 4, "dstB": 1},
         ],
         "pgns": [SIMPLE_PGN, CLOCK_PGN, CLK_OPP_PGN, PROMO_PGN, CASTLE_PGN, "", "not a pgn"],
     }
@@ -403,6 +450,117 @@ class TestSamplingIndices:
                 assert all(0 <= i < total for i in got)
             else:
                 assert got == expected, f"sampling mismatch for {case}: {got} != {expected}"
+
+
+# ── K. Deterministic position cap ────────────────────────────────────────────
+
+
+class TestCapIndices:
+    def test_caps_identical(self, parity):
+        _, outs, _ = parity
+        for case, got in zip(parity[0]["capCases"], outs["capIndices"]):
+            expected = cap_indices(case["indices"], case["maxPositions"])
+            assert got == expected, f"cap mismatch for {case}: {got} != {expected}"
+
+
+class TestJointBatch:
+    def test_matches_2d_builder_with_filtered_capped_indices(self, parity):
+        inputs, outs, _ = parity
+        for i, game in enumerate(inputs["jointGames"]):
+            positions = parse_pgn_to_positions(game["pgn"])
+            opts = game["opts"]
+            indices = cap_indices(
+                informative_indices(positions, skip_opening=opts["skipOpening"], min_legal_moves=opts["minLegalMoves"]),
+                opts["maxPositions"],
+            )
+            w = np.array(game["whiteElos"], dtype=np.float32)
+            b = np.array(game["blackElos"], dtype=np.float32)
+            expected = build_batch_tensors_2d(positions, w, b, CFG, n_sample=0, indices=indices)
+
+            got = outs["jointBatches"][i]
+            assert got is not None, f"joint batch {i} was null"
+            n_grid = len(w) * len(b)
+            n = expected["n_positions"] * n_grid
+
+            assert got["nPositions"] == expected["n_positions"]
+            assert got["nElos"] == n_grid
+            np.testing.assert_array_equal(
+                np.array(got["humanMoves"], dtype=np.int64), expected["human_moves"]
+            )
+            np.testing.assert_array_equal(
+                np.array(got["selfElos"], dtype=np.float32), expected["self_elos"].numpy()
+            )
+            np.testing.assert_array_equal(
+                np.array(got["oppoElos"], dtype=np.float32), expected["oppo_elos"].numpy()
+            )
+            tokens = np.array(got["tokens"], dtype=np.float32).reshape(n, 64, 96)
+            np.testing.assert_array_equal(tokens, expected["tokens"].numpy())
+            masks = np.array(got["legalMasks"], dtype=np.bool_).reshape(expected["n_positions"], 4352)
+            np.testing.assert_array_equal(masks, expected["legal_masks"].numpy())
+
+
+# ── M. Surface helpers (grid construction + bilinear upsample) ───────────────
+
+
+def _bilinear_ref(src, src_w, src_b, dst_w, dst_b):
+    out = np.zeros((dst_w, dst_b), dtype=np.float64)
+    x_max = max(src_w - 2, 0)
+    y_max = max(src_b - 2, 0)
+    for i in range(dst_w):
+        x = 0.0 if dst_w == 1 else i * (src_w - 1) / (dst_w - 1)
+        x0 = min(max(int(np.floor(x)), 0), x_max)
+        x1 = min(x0 + 1, src_w - 1)
+        fx = x - x0
+        for j in range(dst_b):
+            y = 0.0 if dst_b == 1 else j * (src_b - 1) / (dst_b - 1)
+            y0 = min(max(int(np.floor(y)), 0), y_max)
+            y1 = min(y0 + 1, src_b - 1)
+            fy = y - y0
+            out[i, j] = (
+                src[x0, y0] * (1 - fx) * (1 - fy)
+                + src[x0, y1] * (1 - fx) * fy
+                + src[x1, y0] * fx * (1 - fy)
+                + src[x1, y1] * fx * fy
+            )
+    return out
+
+
+class TestSurfaceHelpers:
+    def _make_grid_ref(self, lo, hi, step):
+        n = math.ceil((hi - lo) / step)
+        grid = lo + step * np.arange(n + 1, dtype=np.float64)
+        return np.clip(grid, lo, hi).tolist()
+
+    def test_grids_match_python(self, parity):
+        _, outs, _ = parity
+        for case, got in zip(parity[0]["gridCases"], outs["grids"]):
+            expected_make = self._make_grid_ref(case["lo"], case["hi"], case["step"])
+            assert got["make"] == pytest.approx(expected_make), f"makeGrid mismatch: {case}"
+            expected_window = self._window_grid_ref(
+                case["center"], case["margin"], case["nPoints"], case["lo"], case["hi"]
+            )
+            assert got["window"] == pytest.approx(expected_window), f"windowGrid mismatch: {case}"
+
+    def _window_grid_ref(self, center, margin, n_points, lo, hi):
+        start = max(lo, center - margin)
+        end = min(hi, center + margin)
+        if n_points <= 1:
+            return [start]
+        return [start + (end - start) * k / (n_points - 1) for k in range(n_points)]
+
+    def test_upsample_identical(self, parity):
+        _, outs, _ = parity
+        for case, got in zip(parity[0]["upsampleCases"], outs["upsamples"]):
+            src = np.array(case["src"], dtype=np.float64).reshape(case["srcW"], case["srcB"])
+            expected = _bilinear_ref(src, case["srcW"], case["srcB"], case["dstW"], case["dstB"])
+            dst = np.array(got["dst"], dtype=np.float64).reshape(case["dstW"], case["dstB"])
+            np.testing.assert_allclose(dst, expected, rtol=1e-12, atol=1e-12)
+
+            flat = expected
+            row_sums = flat.sum(axis=1)
+            col_sums = flat.sum(axis=0)
+            assert got["wi"] == int(np.argmax(row_sums))
+            assert got["bi"] == int(np.argmax(col_sums))
 
 
 # ── H/J. Scoring & end-to-end through the real ONNX model ────────────────────

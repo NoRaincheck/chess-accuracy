@@ -89,16 +89,22 @@ Game: W 91.71%  B 97.61%
 
 Estimates per-color ELO ratings from a PGN game by scoring how well the maia3
 model explains the game's actual moves. The default scorer ("loglik") sums the
-log-likelihood of each human move under the model's policy across a grid of
-candidate ELOs, then converts the likelihood curve into a Bayesian posterior
+log-likelihood of each human move under the model's policy across candidate
+ELOs, then converts the likelihood surface into a Bayesian posterior
 (with a Gaussian population prior) over white and black ELO:
 
-- Stage 1: 1D sweep assuming both players share one ELO (localization).
-- Stage 2a: joint (white, black) coarse grid over the full range — catches
-  lopsided games that a shared-ELO assumption would clip.
-- Stage 2b: joint fine grid around the per-color modes; marginal posteriors
-  give a point estimate (parabola-refined), a standard deviation, and a 95%
-  credible interval per color.
+- Stage A: sparse joint (white, black) anchor grid over the full range. The
+  log-likelihood surface is very smooth in `(w, b)`, so bicubic interpolation
+  of the anchor surface localizes the per-color modes at a fraction of the
+  cost of a dense sweep.
+- Stage B: joint fine grid around the modes; marginal posteriors give a point
+  estimate (parabola-refined), a standard deviation, and a 95% credible
+  interval per color. All reported statistics come from real model
+  evaluations — interpolated values are used for localization only.
+
+Position budget: book openings (first 8 plies) and forced positions carry no
+ELO signal and are skipped; long games are thinned to an even-spacing cap of
+80 positions (`--max-positions`, deterministic).
 
 The original top-1+MRR argmax sweeps are still available via `--scorer legacy`.
 
@@ -108,18 +114,16 @@ uv run estimate_elo.py example2.pgn
 
 ```sh
 Loading maia3 ONNX model (maia3-5m)...
-Stage 1: 1D likelihood sweep (15 values, step=200)...
-  -> game center: 2523 (σ=148)
-Stage 2a: joint coarse grid (12x12, step=250)...
-  -> modes: W=2050, B=2550
-Stage 2b: joint fine grid (7x7, ±300 @ step=100)...
-Final: W=2063 ± 163, B=2598 ± 141 (rate=0.5862)
+Stage A: joint anchor grid (6x6, step=550)...
+  -> game center: 2238, modes: W=2050, B=2500
+Stage B: joint fine grid (7x7, ±300 @ step=100)...
+Final: W=2054 ± 172, B=2508 ± 156 (rate=0.5800)
 
 Game: Hikaru vs DanielNaroditsky
 WhiteElo: 3225, BlackElo: 3151
 
-Estimated:  W   2063 ± 163   B   2598 ± 141  (rate 58.6%)
-95% CI:     W [1750, 2314]   B [2255, 2811]
+Estimated:  W   2054 ± 172   B   2508 ± 156  (rate 58.0%)
+95% CI:     W [1750, 2319]   B [2200, 2759]
 PGN ref:    W   3225   B   3151
 ```
 
@@ -129,27 +133,30 @@ Default loglik scorer (12 games from `data/`):
 
 ```
 $ ./estimate_all.sh
-  [ 31s] 1000-1400_huEchdBz.pgn                W:   1362 -> 1826.9 (+464.9)  B:   1170 -> 1367.8 (+197.8)
-  [ 14s] 1000-1400_mk9moDDq.pgn                W:   1248 -> 1820.2 (+572.2)  B:   1190 -> 1203.5 (+13.5)
-  [ 47s] 1000-1400_yMk3fTsK.pgn                W:   1157 ->  914.3 (-242.7)  B:   1240 ->  701.4 (-538.6)
-  [ 43s] 1700-2100_foe2ahdY.pgn                W:   2063 -> 1956.6 (-106.4)  B:   1821 -> 1762.3 (-58.7)
-  [ 31s] 1700-2100_QK5egQTl.pgn                W:   1842 -> 1982.8 (+140.8)  B:   1857 -> 1872.0 (+15.0)
-  [ 33s] 1700-2100_ROmEhCmX.pgn                W:   1721 -> 1876.1 (+155.1)  B:   1725 -> 2003.4 (+278.4)
-  [ 38s] 2100+_BMwcT27N.pgn                    W:   2367 -> 2297.2 (-69.8)  B:   2245 -> 2355.3 (+110.3)
-  [ 21s] 2100+_jv6QQCbT.pgn                    W:   2152 -> 2287.9 (+135.9)  B:   2276 -> 1862.7 (-413.3)
-  [ 69s] 2100+_Q5mCQ4jR.pgn                    W:   2259 -> 2082.0 (-177.0)  B:   2351 -> 2259.2 (-91.8)
-  [ 35s] u1000_2b0kEVul.pgn                    W:    889 ->  626.2 (-262.8)  B:    990 -> 1148.3 (+158.3)
-  [ 27s] u1000_dSJPzhNR.pgn                    W:    970 -> 1252.1 (+282.1)  B:    871 -> 1213.2 (+342.2)
-  [ 43s] u1000_fzpcPioo.pgn                    W:    891 ->  781.2 (-109.8)  B:    938 -> 1109.2 (+171.2)
+  [ 11s] 1000-1400_huEchdBz.pgn                W:   1362 -> 1791.5 (+429.5)  B:   1170 -> 1559.4 (+389.4)
+  [  5s] 1000-1400_mk9moDDq.pgn                W:   1248 -> 1821.4 (+573.4)  B:   1190 -> 1256.6 (+66.6)
+  [ 18s] 1000-1400_yMk3fTsK.pgn                W:   1157 ->  880.7 (-276.3)  B:   1240 ->  670.5 (-569.5)
+  [ 11s] 1700-2100_QK5egQTl.pgn                W:   1842 -> 1974.7 (+132.7)  B:   1857 -> 1809.9 (-47.1)
+  [ 12s] 1700-2100_ROmEhCmX.pgn                W:   1721 -> 1862.0 (+141.0)  B:   1725 -> 2023.7 (+298.7)
+  [ 16s] 1700-2100_foe2ahdY.pgn                W:   2063 -> 2007.1 (-55.9)   B:   1821 -> 1801.8 (-19.2)
+  [ 14s] 2100+_BMwcT27N.pgn                    W:   2367 -> 2293.1 (-73.9)   B:   2245 -> 2339.7 (+94.7)
+  [ 18s] 2100+_Q5mCQ4jR.pgn                    W:   2259 -> 1966.1 (-292.9)  B:   2351 -> 2285.8 (-65.2)
+  [  7s] 2100+_jv6QQCbT.pgn                    W:   2152 -> 2162.4 (+10.4)   B:   2276 -> 1849.0 (-427.0)
+  [ 13s] u1000_2b0kEVul.pgn                    W:    889 ->  651.2 (-237.8)  B:    990 -> 1161.2 (+171.2)
+  [ 10s] u1000_dSJPzhNR.pgn                    W:    970 -> 1256.5 (+286.5)  B:    871 -> 1077.2 (+206.2)
+  [ 16s] u1000_fzpcPioo.pgn                    W:    891 ->  786.0 (-105.0)  B:    938 -> 1173.3 (+235.3)
 
-Done. Processed 12 file(s) in 432s total.
+Done. Processed 12 file(s) in 151s total.
 
 ===== Alignment Summary =====
 Games: 12
-Mean Absolute Error (white): 226.6
-Mean Absolute Error (black): 199.1
-Mean Absolute Error (overall): 212.9
-Avg wall time: 36s per game
+Mean Absolute Error (white): 217.9
+Mean Absolute Error (black): 215.8
+Mean Absolute Error (overall): 216.9
+Avg wall time: 12s per game
 
 CSV written to: /Users/crn/dev/projects/chess-accuracy/elo_results.csv
 ```
+
+Accuracy is unchanged within noise versus the previous dense-grid pipeline
+(MAE overall 212.9 → 216.9) while running ~3x faster (37s → 12s per game).

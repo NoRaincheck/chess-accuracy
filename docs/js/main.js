@@ -1,9 +1,17 @@
 // Main entry point - orchestrates PGN parsing, inference, and UI
 import { moveIndex, getLegalMovesMask } from './moves.js';
 import { parsePgnToPositions } from './pgn.js';
-import { tokenizeBoard, getHistoricalTokens, buildBatchTensor, buildBatchTensorSingleColor } from './tensor.js';
+import { buildBatchTensorJoint } from './tensor.js';
 import { loadModel, isModelLoaded, predict } from './inference.js';
-import { computeScoreStreaming, estimateElo1D, roundUp, roundDown, MIN_ELO, MAX_ELO, FIDELITY } from './scoring.js';
+import { computeScoreStreaming, MIN_ELO, MAX_ELO } from './scoring.js';
+import { makeGrid, windowGrid, upsampleBilinear, marginalModes } from './surface.js';
+
+// Anchor-grid search configuration (mirrors estimate_elo.py defaults)
+const ANCHOR_STEP = 700;   // stage A full-range joint anchor grid spacing
+const DENSE_N = 55;        // interpolated surface resolution per axis (localization only)
+const FINE_MARGIN = 300;   // stage B window half-width around per-color modes
+const FINE_N = 4;          // stage B grid points per axis
+const MAX_POSITIONS = 80;  // deterministic cap on evaluated positions
 
 // Expose moveIndex globally for pgn.js fallback
 window.__moveIndex = moveIndex;
@@ -105,86 +113,82 @@ async function estimateElo() {
   setProgress(`Parsed ${game.nMoves} moves. Building tensors...`, 15);
   await sleep(50);
 
-  // Stage 1: 1D sweep
-  const eloValues = [];
-  for (let e = MIN_ELO; e <= MAX_ELO; e += 200) eloValues.push(e);
+  // Stage A: sparse joint (white, black) anchor grid over the full range.
+  // The score surface is smooth in (w, b), so bilinear interpolation of the
+  // anchor surface localizes per-color modes cheaply; a fine grid around the
+  // modes then produces the final estimates from real model evaluations.
+  const anchors = makeGrid(MIN_ELO, MAX_ELO, ANCHOR_STEP);
+  const nA = anchors.length;
 
-  setProgress(`Stage 1: 1D sweep (${eloValues.length} values)...`, 20);
+  setProgress(`Stage A: joint anchor grid (${nA}x${nA})...`, 20);
   await sleep(50);
 
-  const batch1 = buildBatchTensor(game.positions, eloValues, 0);
-  if (!batch1) {
-    alert('No positions found to evaluate.');
+  const batchA = buildBatchTensorJoint(game.positions, anchors, anchors, { maxPositions: MAX_POSITIONS });
+  if (!batchA) {
+    alert('No informative positions found to evaluate.');
     estimateBtn.disabled = false;
     setProgress('', 0);
     return;
   }
 
-  setProgress(`Running inference on ${batch1.nPositions} positions x ${eloValues.length} ELOs...`, 30);
+  setProgress(`Running inference on ${batchA.nPositions} positions x ${batchA.nElos} ELO pairs...`, 30);
   await sleep(50);
 
-  const result1 = await predict(batch1.tokens, batch1.selfElos, batch1.oppoElos);
+  const resultA = await predict(batchA.tokens, batchA.selfElos, batchA.oppoElos);
+  const scoresA = computeScoreStreaming(resultA.logitsMove, batchA.humanMoves, batchA.legalMasks, batchA.nPositions, batchA.nElos);
 
-  setProgress('Computing scores...', 50);
+  setProgress('Interpolating score surface...', 55);
   await sleep(50);
 
-  const scores1 = computeScoreStreaming(result1.logitsMove, batch1.humanMoves, batch1.legalMasks, batch1.nPositions, batch1.nElos);
-  const { bestElo: stage1Elo } = estimateElo1D(scores1, eloValues);
+  const dense = upsampleBilinear(scoresA, nA, nA, DENSE_N, DENSE_N);
+  const denseVals = makeGrid(MIN_ELO, MAX_ELO, (MAX_ELO - MIN_ELO) / (DENSE_N - 1));
+  let { wi, bi } = marginalModes(dense, DENSE_N, DENSE_N);
+  let bestW = denseVals[wi];
+  let bestB = denseVals[bi];
 
-  setProgress(`Stage 1 result: ${stage1Elo}. Starting per-color refinement...`, 55);
+  setProgress(`Modes: W=${Math.round(bestW)}, B=${Math.round(bestB)}. Refining...`, 65);
   await sleep(50);
 
-  // Stage 2: Per-color refinement
-  let bestW = stage1Elo;
-  let bestB = stage1Elo;
-  let margin = Math.min(400, Math.floor((MAX_ELO - MIN_ELO) / 2));
-  const nAxis = Math.ceil(Math.sqrt(eloValues.length));
-  let opponentElo = bestW < 1500 ? roundUp(bestW + 50) : roundDown(bestW - 50);
+  // Stage B: joint fine grid around the modes. If a mode lands on the window
+  // edge the true mode may lie just outside — slide the window there once.
+  let peakRate = 0;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const wFine = windowGrid(bestW, FINE_MARGIN, FINE_N, MIN_ELO, MAX_ELO);
+    const bFine = windowGrid(bestB, FINE_MARGIN, FINE_N, MIN_ELO, MAX_ELO);
 
-  let roundNum = 0;
-  while (true) {
-    const step = (margin * 2) / Math.max(nAxis - 1, 1);
-    if (step < FIDELITY) break;
-
-    roundNum++;
-    const wLo = Math.max(MIN_ELO, bestW - margin);
-    const wHi = Math.min(MAX_ELO, bestW + margin);
-    const bLo = Math.max(MIN_ELO, bestB - margin);
-    const bHi = Math.min(MAX_ELO, bestB + margin);
-
-    const whiteElos = linspace(wLo, wHi, nAxis);
-    const blackElos = linspace(bLo, bHi, nAxis);
-
-    setProgress(`Round ${roundNum}: White sweep...`, 60 + roundNum * 5);
+    setProgress(`Stage B${attempt ? ' (re-centered)' : ''}: fine grid ${wFine.length}x${bFine.length}...`, 70 + attempt * 10);
     await sleep(50);
 
-    const batchW = buildBatchTensorSingleColor(game.positions, whiteElos, true, opponentElo, 0);
-    if (batchW && batchW.nPositions > 0) {
-      const resultW = await predict(batchW.tokens, batchW.selfElos, batchW.oppoElos);
-      const scoresW = computeScoreStreaming(resultW.logitsMove, batchW.humanMoves, batchW.legalMasks, batchW.nPositions, batchW.nElos);
-      const { bestElo } = estimateElo1D(scoresW, whiteElos);
-      bestW = bestElo;
+    const batchB = buildBatchTensorJoint(game.positions, wFine, bFine, { maxPositions: MAX_POSITIONS });
+    if (!batchB) break;
+
+    const resultB = await predict(batchB.tokens, batchB.selfElos, batchB.oppoElos);
+    const scoresB = computeScoreStreaming(resultB.logitsMove, batchB.humanMoves, batchB.legalMasks, batchB.nPositions, batchB.nElos);
+
+    let bestIdx = 0;
+    for (let k = 1; k < scoresB.length; k++) {
+      if (scoresB[k] > scoresB[bestIdx]) bestIdx = k;
+    }
+    const wiBest = Math.floor(bestIdx / batchB.nB);
+    const biBest = bestIdx % batchB.nB;
+    peakRate = scoresB[bestIdx];
+
+    const onEdge = wiBest === 0 || wiBest === wFine.length - 1 || biBest === 0 || biBest === bFine.length - 1;
+    if (attempt === 0 && onEdge) {
+      bestW = wFine[wiBest];
+      bestB = bFine[biBest];
+      continue;
     }
 
-    setProgress(`Round ${roundNum}: Black sweep...`, 65 + roundNum * 5);
-    await sleep(50);
-
-    const batchB = buildBatchTensorSingleColor(game.positions, blackElos, false, opponentElo, 0);
-    if (batchB && batchB.nPositions > 0) {
-      const resultB = await predict(batchB.tokens, batchB.selfElos, batchB.oppoElos);
-      const scoresB = computeScoreStreaming(resultB.logitsMove, batchB.humanMoves, batchB.legalMasks, batchB.nPositions, batchB.nElos);
-      const { bestElo } = estimateElo1D(scoresB, blackElos);
-      bestB = bestElo;
-    }
-
-    margin = Math.floor(margin / 2);
+    bestW = wFine[wiBest];
+    bestB = bFine[biBest];
+    break;
   }
 
   setProgress('Done!', 100);
   await sleep(200);
 
   // Show results
-  const peakRate = Math.max(...scores1);
   showResults({
     white: game.headers.White || 'White',
     black: game.headers.Black || 'Black',
@@ -197,12 +201,6 @@ async function estimateElo() {
 
   setProgress('', 0);
   estimateBtn.disabled = false;
-}
-
-function linspace(lo, hi, n) {
-  if (n <= 1) return [lo];
-  const step = (hi - lo) / (n - 1);
-  return Array.from({ length: n }, (_, i) => lo + i * step);
 }
 
 function sleep(ms) {

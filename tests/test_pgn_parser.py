@@ -2,6 +2,7 @@ import chess
 
 from chess_accuracy.pgn_parser import (
     _select_sample_indices,
+    cap_indices,
     move_to_index,
     parse_pgn_to_positions,
 )
@@ -104,3 +105,42 @@ class TestSelectSampleIndices:
     def test_no_duplicates(self):
         indices = _select_sample_indices(100, 20)
         assert len(indices) == len(set(indices))
+
+
+class TestCapIndices:
+    def test_no_cap_when_zero(self):
+        indices = [3, 7, 9]
+        assert cap_indices(indices, 0) == [3, 7, 9]
+
+    def test_no_cap_when_negative(self):
+        indices = [3, 7, 9]
+        assert cap_indices(indices, -1) == [3, 7, 9]
+
+    def test_no_cap_when_under_limit(self):
+        indices = list(range(5))
+        assert cap_indices(indices, 10) == list(range(5))
+
+    def test_caps_to_exact_count(self):
+        indices = list(range(100))
+        capped = cap_indices(indices, 10)
+        assert len(capped) == 10
+        assert all(i in indices for i in capped)
+
+    def test_keeps_endpoints(self):
+        indices = list(range(100))
+        capped = cap_indices(indices, 10)
+        assert capped[0] == 0
+        assert capped[-1] == 99
+
+    def test_deterministic(self):
+        indices = list(range(50))
+        assert cap_indices(indices, 7) == cap_indices(indices, 7)
+
+    def test_single_position(self):
+        indices = list(range(100))
+        assert cap_indices(indices, 1) == [0]
+
+    def test_preserves_original_values(self):
+        indices = [5, 17, 23, 41, 90]
+        capped = cap_indices(indices, 2)
+        assert all(i in indices for i in capped)

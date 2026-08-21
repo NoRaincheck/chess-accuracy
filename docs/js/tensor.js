@@ -282,4 +282,116 @@ function buildBatchTensorSingleColor(positions, eloValues, colorIsWhite, opponen
   };
 }
 
-export { tokenizeBoard, getHistoricalTokens, selectSampleIndices, buildBatchTensor, buildBatchTensorSingleColor, D_IN };
+// Deterministic even-spacing cap on position indices.
+// Mirrors chess_accuracy/pgn_parser.py:cap_indices (floor-based even spacing).
+function capIndices(indices, maxPositions) {
+  if (!maxPositions || maxPositions <= 0 || indices.length <= maxPositions) {
+    return indices.slice();
+  }
+  if (maxPositions === 1) return [indices[0]];
+  const last = indices.length - 1;
+  const picked = new Set();
+  for (let k = 0; k < maxPositions; k++) {
+    picked.add(Math.floor((k * last) / (maxPositions - 1)));
+  }
+  return [...picked].sort((a, b) => a - b).map((i) => indices[i]);
+}
+
+// Build batch tensors for a joint (white, black) ELO grid.
+// Mirrors python build_batch_tensors_2d: white-turn positions get
+// self=whiteElos[wi] / oppo=blackElos[bi], black-turn positions the reverse.
+//
+// Unlike buildBatchTensor this builder applies informative filtering
+// (skips opening plies and positions with too few legal moves) and an
+// even-spacing position cap, matching estimate_elo.py's default pipeline.
+//
+// Returns { tokens, selfElos, oppoElos, humanMoves, legalMasks,
+//           nPositions, nElos (= nW*nB), nW, nB }
+function buildBatchTensorJoint(positions, whiteElos, blackElos, opts) {
+  const { skipOpening = 8, minLegalMoves = 2, maxPositions = 80 } = opts || {};
+  const Chess = window.Chess;
+  const nW = whiteElos.length;
+  const nB = blackElos.length;
+  const nGrid = nW * nB;
+
+  const gameBoard = new Chess();
+  if (positions.length > 0 && positions[0].fenBefore) {
+    gameBoard.load(positions[0].fenBefore);
+  }
+
+  // Replay the game once, collecting informative candidate positions
+  const candidates = [];
+  const history = [];
+
+  for (let posIdx = 0; posIdx < positions.length; posIdx++) {
+    const pos = positions[posIdx];
+    const token = tokenizeBoard(gameBoard);
+    history.push(token);
+    while (history.length > HISTORY_LEN) history.shift();
+
+    if (posIdx >= skipOpening && gameBoard.moves().length >= minLegalMoves) {
+      candidates.push({
+        isWhiteTurn: pos.isWhiteTurn,
+        tokens: getHistoricalTokens(history),
+        humanMove: pos.moveIndex,
+        legalMask: getLegalMovesMask(gameBoard, gameBoard.turn() === 'b'),
+      });
+    }
+
+    gameBoard.move(pos.moveSan, { sloppy: true });
+  }
+
+  const kept = capIndices(candidates.map((_, i) => i), maxPositions);
+  const nPos = kept.length;
+  if (nPos === 0) return null;
+
+  const seqLen = 64 * D_IN;
+  const tokensBatch = new Float32Array(nPos * nGrid * seqLen);
+  const selfElos = new Float32Array(nPos * nGrid);
+  const oppoElos = new Float32Array(nPos * nGrid);
+  const humanMoves = new Int32Array(nPos);
+  const legalMasks = new Uint8Array(nPos * 4352);
+
+  for (let p = 0; p < nPos; p++) {
+    const cand = candidates[kept[p]];
+    humanMoves[p] = cand.humanMove;
+    legalMasks.set(cand.legalMask, p * 4352);
+
+    for (let wi = 0; wi < nW; wi++) {
+      for (let bi = 0; bi < nB; bi++) {
+        const outIdx = p * nGrid + wi * nB + bi;
+        tokensBatch.set(cand.tokens, outIdx * seqLen);
+        if (cand.isWhiteTurn) {
+          selfElos[outIdx] = whiteElos[wi];
+          oppoElos[outIdx] = blackElos[bi];
+        } else {
+          selfElos[outIdx] = blackElos[bi];
+          oppoElos[outIdx] = whiteElos[wi];
+        }
+      }
+    }
+  }
+
+  return {
+    tokens: tokensBatch,
+    selfElos,
+    oppoElos,
+    humanMoves,
+    legalMasks,
+    nPositions: nPos,
+    nElos: nGrid,
+    nW,
+    nB,
+  };
+}
+
+export {
+  tokenizeBoard,
+  getHistoricalTokens,
+  selectSampleIndices,
+  buildBatchTensor,
+  buildBatchTensorSingleColor,
+  buildBatchTensorJoint,
+  capIndices,
+  D_IN,
+};

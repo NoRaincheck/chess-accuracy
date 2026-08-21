@@ -260,6 +260,22 @@ def loglik_2d_grid(
     return surface, match_counts, n_pos_total
 
 
+def bicubic_upsample_surface(surface: np.ndarray, target_shape: tuple[int, int]) -> np.ndarray:
+    """Bicubically upsample a (W, B) log-likelihood surface onto a denser grid.
+
+    Both the source and target grids are assumed to be uniform and to span the
+    same ELO range, so corners map to corners (align_corners=True). The
+    likelihood surface is smooth in (w, b), which makes bicubic reconstruction
+    from a sparse anchor grid accurate to well under a grid cell.
+
+    Used only for mode *localization*; reported statistics always come from
+    real model evaluations.
+    """
+    t = torch.from_numpy(np.ascontiguousarray(surface, dtype=np.float32))[None, None]
+    out = torch.nn.functional.interpolate(t, size=target_shape, mode="bicubic", align_corners=True)
+    return out[0, 0].numpy().astype(np.float64)
+
+
 def joint_posterior_2d(
     surface: np.ndarray,
     white_elo_values: np.ndarray,
