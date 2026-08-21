@@ -1,11 +1,18 @@
 """
 Estimate chess player ELO from game moves using maia3.
 
+Default scorer ("loglik") — likelihood fingerprints with uncertainty:
+  Stage 1: 1D log-likelihood sweep (self = opponent = e) over the full range.
+  Stage 2a: joint (white, black) coarse grid over the full range -> per-color modes.
+  Stage 2b: joint fine grid around the modes -> posterior mean / std / 95% CI
+            per color, with a Gaussian population prior.
+
+Legacy scorer (--scorer legacy) — original top-1+MRR argmax sweeps:
 Stage 1: 1D sweep assuming both players have the same ELO.
 Stage 2: Two separate 1D sweeps (one per color), opponent fixed at the ELO in stage 1.
 
 Usage:
-    python estimate_elo_separate.py game.pgn
+    python estimate_elo.py game.pgn
 """
 
 import argparse
@@ -24,6 +31,14 @@ FIDELITY = 50
 
 MIN_ELO = 300
 MAX_ELO = 3000
+
+# Log-likelihood scorer configuration
+STAGE1_STEP = 200    # ELO spacing for the stage-1 1D sweep (localization only)
+COARSE_STEP = 250    # stage-2a joint grid spacing (full range)
+FINE_MARGIN = 300    # stage-2b window half-width around per-color modes
+FINE_STEP = 100      # stage-2b grid spacing (point estimates refined by parabola fit)
+PRIOR_MEAN = 1500.0  # Gaussian population prior over player ELO
+PRIOR_STD = 350.0
 
 
 def roundup(x):
@@ -271,11 +286,142 @@ def _batch_estimate_separate(pgn_text, scan, model_name, quiet=False):
     return best_w, best_b, best_rate, n_evals
 
 
+def _make_grid(lo: float, hi: float, step: float) -> np.ndarray:
+    """ELO grid from lo to hi (inclusive, hi snapped into the grid)."""
+    n = math.ceil((hi - lo) / step)
+    grid = lo + step * np.arange(n + 1, dtype=np.float64)
+    return np.clip(grid, lo, hi).astype(np.float32)
+
+
+def _window_grid(center: float, margin: float, step: float, lo: float, hi: float) -> np.ndarray:
+    """Fine ELO grid centered on `center`, clamped to [lo, hi]."""
+    return _make_grid(max(lo, center - margin), min(hi, center + margin), step)
+
+
+def _logsumexp(a: np.ndarray, axis: int) -> np.ndarray:
+    """Log-sum-exp along an axis, stable against under/overflow."""
+    m = a.max(axis=axis, keepdims=True)
+    out = m + np.log(np.exp(a - m).sum(axis=axis, keepdims=True))
+    return np.squeeze(out, axis=axis)
+
+
+def _vertex_refine(values: np.ndarray, log_curve: np.ndarray) -> float:
+    """Sub-grid point estimate: parabola vertex through the 3 points around the mode."""
+    k = int(np.argmax(log_curve))
+    if 0 < k < len(values) - 1:
+        y0, y1, y2 = log_curve[k - 1], log_curve[k], log_curve[k + 1]
+        denom = y0 - 2.0 * y1 + y2
+        if denom < 0:
+            delta = 0.5 * (y0 - y2) / denom * (values[1] - values[0])
+            return float(values[k] + delta)
+    return float(values[k])
+
+
+def _estimate_posterior(pgn_text: str, model_name: str, quiet: bool = False) -> dict:
+    """Estimate per-color ELO posteriors via log-likelihood fingerprints."""
+    from types import SimpleNamespace
+
+    from chess_accuracy.batch_inference import (
+        _marginal_stats,
+        curve_posterior,
+        joint_posterior_2d,
+        load_inference_engine,
+        loglik_1d_sweep,
+        loglik_2d_grid,
+    )
+    from chess_accuracy.maia3.model_registry import resolve_model_spec
+    from chess_accuracy.pgn_parser import informative_indices, parse_pgn_to_positions
+
+    def _log(msg):
+        if not quiet:
+            print(msg)
+
+    _log(f"Loading maia3 ONNX model ({model_name})...")
+    inf_engine = load_inference_engine(model_name)
+
+    spec = resolve_model_spec(model_name)
+    cfg = SimpleNamespace(**spec.config)
+
+    positions = parse_pgn_to_positions(pgn_text)
+    indices = informative_indices(positions)
+    n_pos = len(indices)
+
+    if n_pos == 0:
+        raise ValueError("No informative positions found in PGN")
+
+    # Stage 1: 1D sweep with self = opponent, full range.
+    stage1_grid = _make_grid(MIN_ELO, MAX_ELO, STAGE1_STEP)
+    _log(f"Stage 1: 1D likelihood sweep ({len(stage1_grid)} values, step={STAGE1_STEP:.0f})...")
+    r1 = loglik_1d_sweep(positions, stage1_grid, cfg, inf_engine, indices=indices)
+    post1 = curve_posterior(r1["curve"], stage1_grid, PRIOR_MEAN, PRIOR_STD)
+    center = post1["mean"]
+    n_evals = len(stage1_grid)
+    _log(f"  -> game center: {center:.0f} (σ={post1['std']:.0f})")
+
+    # Stage 2a: joint coarse grid over the full range -> per-color modes.
+    coarse = _make_grid(MIN_ELO, MAX_ELO, COARSE_STEP)
+    _log(f"Stage 2a: joint coarse grid ({len(coarse)}x{len(coarse)}, step={COARSE_STEP:.0f})...")
+    surface, _match, _ = loglik_2d_grid(positions, coarse, coarse, cfg, inf_engine, indices=indices)
+    joint_a = joint_posterior_2d(surface, coarse, coarse, PRIOR_MEAN, PRIOR_STD)
+    w_mode = float(coarse[int(np.argmax(joint_a.sum(axis=1)))])
+    b_mode = float(coarse[int(np.argmax(joint_a.sum(axis=0)))])
+    n_evals += len(coarse) ** 2
+    _log(f"  -> modes: W={w_mode:.0f}, B={b_mode:.0f}")
+
+    # Stage 2b: joint fine grid around the modes -> final posteriors.
+    w_grid = _window_grid(w_mode, FINE_MARGIN, FINE_STEP, MIN_ELO, MAX_ELO)
+    b_grid = _window_grid(b_mode, FINE_MARGIN, FINE_STEP, MIN_ELO, MAX_ELO)
+    _log(
+        f"Stage 2b: joint fine grid ({len(w_grid)}x{len(b_grid)}, "
+        f"±{FINE_MARGIN:.0f} @ step={FINE_STEP:.0f})..."
+    )
+    surface2, match2, _ = loglik_2d_grid(positions, w_grid, b_grid, cfg, inf_engine, indices=indices)
+    joint_b = joint_posterior_2d(surface2, w_grid, b_grid, PRIOR_MEAN, PRIOR_STD)
+    n_evals += len(w_grid) * len(b_grid)
+
+    w_post = joint_b.sum(axis=1)
+    b_post = joint_b.sum(axis=0)
+    _mean_w, std_w, ci_w = _marginal_stats(w_post, w_grid.astype(np.float64))
+    _mean_b, std_b, ci_b = _marginal_stats(b_post, b_grid.astype(np.float64))
+
+    # Point estimates: parabola-refined marginal modes (sub-grid precision).
+    from chess_accuracy.batch_inference import elo_log_prior
+
+    log_post2 = (
+        surface2
+        + elo_log_prior(w_grid, PRIOR_MEAN, PRIOR_STD)[:, np.newaxis]
+        + elo_log_prior(b_grid, PRIOR_MEAN, PRIOR_STD)[np.newaxis, :]
+    )
+    est_w = _vertex_refine(w_grid, _logsumexp(log_post2, axis=1))
+    est_b = _vertex_refine(b_grid, _logsumexp(log_post2, axis=0))
+
+    # Familiar "match rate" at the grid cell nearest the posterior mean.
+    wi = int(np.argmin(np.abs(w_grid - est_w)))
+    bi = int(np.argmin(np.abs(b_grid - est_b)))
+    peak_rate = float(match2[wi, bi] / n_pos) if n_pos else 0.0
+
+    _log(f"Final: W={est_w:.0f} ± {std_w:.0f}, B={est_b:.0f} ± {std_b:.0f} (rate={peak_rate:.4f})")
+
+    return {
+        "est_white_elo": round(est_w, 1),
+        "est_black_elo": round(est_b, 1),
+        "white_std": round(std_w, 1),
+        "black_std": round(std_b, 1),
+        "white_ci95": [round(ci_w[0], 1), round(ci_w[1], 1)],
+        "black_ci95": [round(ci_b[0], 1), round(ci_b[1], 1)],
+        "peak_rate": round(peak_rate, 4),
+        "n_evaluations": n_evals,
+        "n_positions": n_pos,
+        "stage1_center": round(center, 1),
+    }
+
+
 def estimate(
     pgn_path,
     n_sample=0,
     model_name="maia3-5m",
     quiet=False,
+    scorer="loglik",
 ):
     """Estimate ELO for a game."""
     pgn_text = pgn_path.read_text()
@@ -288,34 +434,59 @@ def estimate(
     black_elo_hdr = game.headers.get("BlackElo", "?")
 
     n_moves = sum(1 for _ in game.mainline_moves())
-    est_white, est_black, peak_rate, n_evals = _batch_estimate_separate(
-        pgn_text,
-        {"elo_lo": MIN_ELO, "elo_hi": MAX_ELO},
-        model_name,
-        quiet=quiet,
-    )
+
+    if scorer == "legacy":
+        est_white, est_black, peak_rate, n_evals = _batch_estimate_separate(
+            pgn_text,
+            {"elo_lo": MIN_ELO, "elo_hi": MAX_ELO},
+            model_name,
+            quiet=quiet,
+        )
+        result = {
+            "white": white_name,
+            "black": black_name,
+            "white_elo_hdr": white_elo_hdr,
+            "black_elo_hdr": black_elo_hdr,
+            "est_white_elo": round(est_white, 1),
+            "est_black_elo": round(est_black, 1),
+            "peak_rate": round(peak_rate, 4),
+            "n_evaluations": n_evals,
+            "n_moves": n_moves,
+            "sampled": n_sample > 0,
+        }
+    else:
+        post = _estimate_posterior(pgn_text, model_name, quiet=quiet)
+        result = {
+            "white": white_name,
+            "black": black_name,
+            "white_elo_hdr": white_elo_hdr,
+            "black_elo_hdr": black_elo_hdr,
+            "n_moves": n_moves,
+            "sampled": n_sample > 0,
+            **post,
+        }
 
     if not quiet:
         print()
         print(f"Game: {white_name} vs {black_name}")
         print(f"WhiteElo: {white_elo_hdr}, BlackElo: {black_elo_hdr}")
         print()
-        print(f"Estimated:  W {est_white:6.0f}   B {est_black:6.0f}  (rate {peak_rate * 100:.1f}%)")
+        if scorer == "legacy":
+            print(f"Estimated:  W {result['est_white_elo']:6.0f}   B {result['est_black_elo']:6.0f}  (rate {result['peak_rate'] * 100:.1f}%)")
+        else:
+            print(
+                f"Estimated:  W {result['est_white_elo']:6.0f} ± {result['white_std']:.0f}   "
+                f"B {result['est_black_elo']:6.0f} ± {result['black_std']:.0f}  "
+                f"(rate {result['peak_rate'] * 100:.1f}%)"
+            )
+            print(
+                f"95% CI:     W [{result['white_ci95'][0]:.0f}, {result['white_ci95'][1]:.0f}]   "
+                f"B [{result['black_ci95'][0]:.0f}, {result['black_ci95'][1]:.0f}]"
+            )
         print(f"PGN ref:    W {white_elo_hdr:>6s}   B {black_elo_hdr:>6s}")
         print()
 
-    return {
-        "white": white_name,
-        "black": black_name,
-        "white_elo_hdr": white_elo_hdr,
-        "black_elo_hdr": black_elo_hdr,
-        "est_white_elo": round(est_white, 1),
-        "est_black_elo": round(est_black, 1),
-        "peak_rate": round(peak_rate, 4),
-        "n_evaluations": n_evals,
-        "n_moves": n_moves,
-        "sampled": n_sample > 0,
-    }
+    return result
 
 
 def main():
@@ -337,6 +508,12 @@ def main():
         help="Maia3 model: maia3-5m, maia3-23m, maia3-79m",
     )
     parser.add_argument("--json", action="store_true", help="Output result as NDJSON to stdout")
+    parser.add_argument(
+        "--scorer",
+        choices=["loglik", "legacy"],
+        default="loglik",
+        help="loglik: likelihood fingerprint posterior (default); legacy: top-1+MRR argmax sweeps",
+    )
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress verbose progress output")
     args = parser.parse_args()
 
@@ -346,6 +523,7 @@ def main():
         n_sample=args.sample,
         model_name=args.model,
         quiet=args.quiet,
+        scorer=args.scorer,
     )
 
     if args.json:

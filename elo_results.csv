@@ -1,13 +1,13 @@
-game_file,white,black,white_elo_hdr,black_elo_hdr,est_white_elo,est_black_elo,peak_rate,n_evaluations,n_moves,sampled,wall_seconds
-"robis vs viwi","robis","viwi","1362","1170",2066.7,1666.7,0.485,38,59,false,5
-"vertical8 vs hansk","vertical8","hansk","1248","1190",1866.7,1200.0,0.5656,38,27,false,2
-"alecster vs snoon","alecster","snoon","1157","1240",666.7,533.3,0.4308,38,89,false,7
-"lugalbanda vs Amilcar_Hdez1","lugalbanda","Amilcar_Hdez1","1842","1857",2066.7,2133.3,0.6087,38,59,false,5
-"DET-UA vs Dr_King_Schultz","DET-UA","Dr_King_Schultz","1721","1725",2200.0,2000.0,0.5084,38,62,false,4
-"Pitrinu vs Lewissoft","Pitrinu","Lewissoft","2063","1821",1600.0,1533.3,0.5406,38,81,false,5
-"NevSky vs xmodey","NevSky","xmodey","2367","2245",2466.7,2666.7,0.5789,38,72,false,5
-"xmodey vs NevSky","xmodey","NevSky","2259","2351",2200.0,2200.0,0.538,38,133,false,9
-"Tvivelaktig vs Bikfoot","Tvivelaktig","Bikfoot","2152","2276",2466.7,1400.0,0.608,38,39,false,4
-"tigresa1 vs bballbrett5","tigresa1","bballbrett5","889","990",800.0,1000.0,0.4314,38,68,false,5
-"misha-t vs cellus5000","misha-t","cellus5000","970","871",1200.0,466.7,0.4385,38,53,false,4
-"cellus5000 vs kybla2","cellus5000","kybla2","891","938",600.0,733.3,0.4025,38,84,false,7
+game_file,white,black,white_elo_hdr,black_elo_hdr,est_white_elo,est_black_elo,white_std,black_std,white_ci95,black_ci95,peak_rate,n_evaluations,n_positions,n_moves,sampled,wall_seconds
+"robis vs viwi","robis","viwi","1362","1170",1826.9,1367.8,155.9,157.8,"[1500,2062]","[1000,1575]",0.5254,208,59,59,false,30
+"vertical8 vs hansk","vertical8","hansk","1248","1190",1820.2,1203.5,167.1,148.9,"[1500,2071]","[1000,1491]",0.6667,208,27,27,false,15
+"alecster vs snoon","alecster","snoon","1157","1240",914.3,701.4,162.6,80.2,"[750,1274]","[506,833]",0.427,208,89,89,false,46
+"Pitrinu vs Lewissoft","Pitrinu","Lewissoft","2063","1821",1956.6,1762.3,140.2,145.7,"[1750,2213]","[1500,1992]",0.5802,208,81,81,false,42
+"lugalbanda vs Amilcar_Hdez1","lugalbanda","Amilcar_Hdez1","1842","1857",1982.8,1872.0,135.6,148.5,"[1750,2230]","[1500,2074]",0.661,208,59,59,false,30
+"DET-UA vs Dr_King_Schultz","DET-UA","Dr_King_Schultz","1721","1725",1876.1,2003.4,156.1,138.5,"[1500,2077]","[1750,2222]",0.5484,208,62,62,false,32
+"NevSky vs xmodey","NevSky","xmodey","2367","2245",2297.2,2355.3,133.1,129.7,"[2000,2505]","[2024,2555]",0.6528,208,72,72,false,37
+"Tvivelaktig vs Bikfoot","Tvivelaktig","Bikfoot","2152","2276",2287.9,1862.7,144.8,160.7,"[2000,2517]","[1500,2072]",0.6667,208,39,39,false,22
+"xmodey vs NevSky","xmodey","NevSky","2259","2351",2082.0,2259.2,161.7,159.0,"[1750,2324]","[2000,2536]",0.6015,208,133,133,false,75
+"tigresa1 vs bballbrett5","tigresa1","bballbrett5","889","990",626.2,1148.3,118.0,149.2,"[345,830]","[756,1329]",0.4242,208,66,68,false,34
+"misha-t vs cellus5000","misha-t","cellus5000","970","871",1252.1,1213.2,153.7,158.1,"[1000,1551]","[1000,1533]",0.4118,208,51,53,false,26
+"cellus5000 vs kybla2","cellus5000","kybla2","891","938",781.2,1109.2,93.1,149.3,"[539,937]","[750,1314]",0.3373,208,83,84,false,42

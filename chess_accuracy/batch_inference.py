@@ -2,7 +2,17 @@
 
 Provides fast ELO estimation by running a single forward pass over
 N positions × M ELO values, instead of M separate inference calls.
+
+Two scoring families are provided:
+- Rank scores (`_compute_score`): blended top-1 accuracy + MRR (legacy).
+- Log-likelihood fingerprints (`position_loglik`, `loglik_1d_sweep`,
+  `loglik_2d_grid`): per-position log P(human move | model at elo e).
+  The summed curve L(e) is smooth in e, so a posterior
+  P(e | game) ∝ exp(L(e)) · prior(e) gives sub-grid estimates and
+  credible intervals.
 """
+
+import math
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -96,6 +106,177 @@ def _compute_score(logits_masked, human_moves, n_pos, alpha=0.6):
     mrr = (1.0 / rank).mean(axis=0)
 
     return alpha * top1_acc + (1.0 - alpha) * mrr
+
+
+def _log_softmax_masked(logits_masked: np.ndarray) -> np.ndarray:
+    """Log-softmax over the last axis, treating -inf entries as illegal."""
+    shifted = logits_masked - logits_masked.max(axis=-1, keepdims=True)
+    log_z = np.log(np.exp(shifted).sum(axis=-1, keepdims=True))
+    return shifted - log_z
+
+
+def position_loglik(logits_masked: np.ndarray, human_moves: np.ndarray, n_pos: int) -> np.ndarray:
+    """Per-position log-likelihood of the human move.
+
+    Args:
+        logits_masked: (N, M, V) logits with illegal moves set to -inf.
+        human_moves: (N,) human move indices.
+        n_pos: number of positions (N).
+
+    Returns:
+        (N, M) matrix of log P(human_move | elo).
+    """
+    if n_pos == 0:
+        return np.zeros((0, logits_masked.shape[1]), dtype=np.float64)
+
+    logp = _log_softmax_masked(logits_masked)
+    n_elos = logits_masked.shape[1]
+    pos_idx = np.arange(n_pos)[:, None]
+    elo_idx = np.arange(n_elos)[None, :]
+    return logp[pos_idx, elo_idx, human_moves[:, None]]
+
+
+def elo_log_prior(elo_values: np.ndarray, mean: float = 1500.0, std: float = 350.0) -> np.ndarray:
+    """Unnormalized log of a truncated-Gaussian population prior over ELO."""
+    z = (np.asarray(elo_values, dtype=np.float64) - mean) / std
+    return -0.5 * z * z
+
+
+def _marginal_stats(posterior: np.ndarray, values: np.ndarray) -> tuple[float, float, tuple[float, float]]:
+    """Posterior mean, std, and central 95% credible interval over a 1D grid."""
+    mean = float((posterior * values).sum())
+    var = float((posterior * (values - mean) ** 2).sum())
+    std = math.sqrt(max(var, 0.0))
+    cdf = np.cumsum(posterior)
+    lo = float(np.interp(0.025, cdf, values))
+    hi = float(np.interp(0.975, cdf, values))
+    return mean, std, (lo, hi)
+
+
+def curve_posterior(
+    curve: np.ndarray,
+    elo_values: np.ndarray,
+    prior_mean: float = 1500.0,
+    prior_std: float = 350.0,
+) -> dict:
+    """Turn a 1D log-likelihood curve into a normalized posterior summary.
+
+    P(e | game) ∝ exp(curve(e)) · prior(e)
+
+    Returns dict with keys: posterior, mean, std, ci95.
+    """
+    log_post = curve.astype(np.float64) + elo_log_prior(elo_values, prior_mean, prior_std)
+    log_post -= log_post.max()
+    posterior = np.exp(log_post)
+    posterior /= posterior.sum()
+    mean, std, ci95 = _marginal_stats(posterior, elo_values.astype(np.float64))
+    return {"posterior": posterior, "mean": mean, "std": std, "ci95": ci95}
+
+
+def loglik_1d_sweep(
+    positions: list[dict],
+    elo_values: np.ndarray,
+    cfg,
+    inference_engine: "BatchMaia3Inference",
+    indices: list[int] | None = None,
+) -> dict:
+    """Sweep candidate ELOs with self = opponent = e, scoring by log-likelihood.
+
+    Returns dict with:
+        - ll: (N, M) per-position log-likelihoods
+        - curve: (M,) summed log-likelihood per ELO
+        - top1_counts: (M,) number of positions where the model's top-1
+          matches the human move (for reporting a familiar "match rate")
+        - n_pos: number of positions evaluated
+    """
+    batch = build_batch_tensors(positions, elo_values, cfg, n_sample=0, indices=indices)
+    n_pos = batch["n_positions"]
+    n_elos = batch["n_elos"]
+    if n_pos == 0:
+        zeros_m = np.zeros(n_elos, dtype=np.float64)
+        return {"ll": np.zeros((0, n_elos)), "curve": zeros_m, "top1_counts": zeros_m, "n_pos": 0}
+
+    logits_move, _, _ = inference_engine.predict(batch["tokens"], batch["self_elos"], batch["oppo_elos"])
+    logits = logits_move.reshape(n_pos, n_elos, -1)
+    masked = np.where(batch["legal_masks"].numpy()[:, np.newaxis, :], logits, -np.inf)
+
+    ll = position_loglik(masked, batch["human_moves"], n_pos)
+    top1 = masked.argmax(axis=2) == batch["human_moves"][:, None]
+    return {
+        "ll": ll,
+        "curve": ll.sum(axis=0),
+        "top1_counts": top1.sum(axis=0).astype(np.float64),
+        "n_pos": n_pos,
+    }
+
+
+def loglik_2d_grid(
+    positions: list[dict],
+    white_elo_values: np.ndarray,
+    black_elo_values: np.ndarray,
+    cfg,
+    inference_engine: "BatchMaia3Inference",
+    indices: list[int] | None = None,
+    chunk_combos: int = 64,
+) -> tuple[np.ndarray, np.ndarray, int]:
+    """Joint (white, black) log-likelihood surface, computed in chunks.
+
+    White-turn positions score self=white_elo vs oppo=black_elo and vice
+    versa. Chunking bounds peak memory to roughly chunk_combos grid cells
+    worth of tokens/logits at a time.
+
+    Returns (surface, match_counts, n_pos):
+        - surface: (W, B) summed log-likelihood per grid cell
+        - match_counts: (W, B) top-1 match counts per grid cell
+        - n_pos: number of positions evaluated
+    """
+    n_w = len(white_elo_values)
+    n_b = len(black_elo_values)
+    surface = np.zeros((n_w, n_b), dtype=np.float64)
+    match_counts = np.zeros((n_w, n_b), dtype=np.float64)
+    n_pos_total = 0
+
+    w_block = max(1, chunk_combos // max(n_b, 1))
+    for w_start in range(0, n_w, w_block):
+        w_chunk = white_elo_values[w_start : w_start + w_block]
+        batch = build_batch_tensors_2d(positions, w_chunk, black_elo_values, cfg, n_sample=0, indices=indices)
+        n_pos = batch["n_positions"]
+        n_pos_total = n_pos
+        if n_pos == 0:
+            continue
+
+        logits_move, _, _ = inference_engine.predict(batch["tokens"], batch["self_elos"], batch["oppo_elos"])
+        logits = logits_move.reshape(n_pos, len(w_chunk) * n_b, -1)
+        masked = np.where(batch["legal_masks"].numpy()[:, np.newaxis, :], logits, -np.inf)
+
+        ll = position_loglik(masked, batch["human_moves"], n_pos)
+        top1 = masked.argmax(axis=2) == batch["human_moves"][:, None]
+
+        surface[w_start : w_start + len(w_chunk), :] = ll.sum(axis=0).reshape(len(w_chunk), n_b)
+        match_counts[w_start : w_start + len(w_chunk), :] = (
+            top1.sum(axis=0).astype(np.float64).reshape(len(w_chunk), n_b)
+        )
+
+    return surface, match_counts, n_pos_total
+
+
+def joint_posterior_2d(
+    surface: np.ndarray,
+    white_elo_values: np.ndarray,
+    black_elo_values: np.ndarray,
+    prior_mean: float = 1500.0,
+    prior_std: float = 350.0,
+) -> np.ndarray:
+    """Normalize a 2D log-likelihood surface into P(w, b | game) ∝ exp(L)·prior(w)·prior(b)."""
+    log_post = (
+        surface.astype(np.float64)
+        + elo_log_prior(white_elo_values, prior_mean, prior_std)[:, np.newaxis]
+        + elo_log_prior(black_elo_values, prior_mean, prior_std)[np.newaxis, :]
+    )
+    log_post -= log_post.max()
+    posterior = np.exp(log_post)
+    posterior /= posterior.sum()
+    return posterior
 
 
 def estimate_elo_batch(

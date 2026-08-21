@@ -142,11 +142,33 @@ def _select_sample_indices(total_moves: int, n_sample: int) -> list[int]:
     return sorted(chosen)
 
 
+def informative_indices(
+    positions: list[dict],
+    skip_opening: int = 0,
+    min_legal_moves: int = 2,
+) -> list[int]:
+    """Indices of positions that carry ELO signal.
+
+    Skips the first `skip_opening` plies (book/theory moves look the same at
+    every ELO) and positions with fewer than `min_legal_moves` legal moves
+    (forced moves contribute a constant to every candidate's likelihood).
+    """
+    out = []
+    for i, pos in enumerate(positions):
+        if i < skip_opening:
+            continue
+        if pos["board"].legal_moves.count() < min_legal_moves:
+            continue
+        out.append(i)
+    return out
+
+
 def build_batch_tensors(
     positions: list[dict],
     elo_values: np.ndarray,
     cfg,
     n_sample: int = 0,
+    indices: list[int] | None = None,
 ) -> dict:
     """Build batch tensors for N positions × M ELO values.
 
@@ -164,7 +186,9 @@ def build_batch_tensors(
     n_elo = len(elo_values)
 
     # Select which positions to evaluate
-    if n_sample > 0:
+    if indices is not None:
+        sample_indices = list(indices)
+    elif n_sample > 0:
         sample_indices = _select_sample_indices(len(positions), n_sample)
     else:
         sample_indices = list(range(len(positions)))
@@ -235,6 +259,7 @@ def build_batch_tensors_2d(
     black_elo_values: np.ndarray,
     cfg,
     n_sample: int = 0,
+    indices: list[int] | None = None,
 ) -> dict:
     """Build batch tensors for 2D ELO grid search (white_elo × black_elo).
 
@@ -261,7 +286,9 @@ def build_batch_tensors_2d(
     n_grid = n_w * n_b  # total ELO combinations
 
     # Select which positions to evaluate
-    if n_sample > 0:
+    if indices is not None:
+        sample_indices = list(indices)
+    elif n_sample > 0:
         sample_indices = _select_sample_indices(len(positions), n_sample)
     else:
         sample_indices = list(range(len(positions)))

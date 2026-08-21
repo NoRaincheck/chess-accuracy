@@ -16,7 +16,7 @@ n_b=0
 n_total=0
 
 # CSV header
-echo "game_file,white,black,white_elo_hdr,black_elo_hdr,est_white_elo,est_black_elo,peak_rate,n_evaluations,n_moves,sampled,wall_seconds" > "$CSV_FILE"
+echo "game_file,white,black,white_elo_hdr,black_elo_hdr,est_white_elo,est_black_elo,white_std,black_std,white_ci95,black_ci95,peak_rate,n_evaluations,n_positions,n_moves,sampled,wall_seconds" > "$CSV_FILE"
 
 for pgn in "$DATA_DIR"/*.pgn; do
     [ -f "$pgn" ] || continue
@@ -39,10 +39,15 @@ for pgn in "$DATA_DIR"/*.pgn; do
     ne=$(echo "$result" | jq -r '.n_evaluations')
     nm=$(echo "$result" | jq -r '.n_moves')
     sa=$(echo "$result" | jq -r '.sampled')
+    ws=$(echo "$result" | jq -r '.white_std // ""')
+    bs=$(echo "$result" | jq -r '.black_std // ""')
+    wci=$(echo "$result" | jq -r 'if .white_ci95 then "[\(.white_ci95[0]|round),\(.white_ci95[1]|round)]" else "" end')
+    bci=$(echo "$result" | jq -r 'if .black_ci95 then "[\(.black_ci95[0]|round),\(.black_ci95[1]|round)]" else "" end')
+    np_=$(echo "$result" | jq -r '.n_positions // ""')
 
     # Write CSV row
-    printf '"%s vs %s","%s","%s","%s","%s",%s,%s,%s,%s,%s,%s,%s\n' \
-        "$white" "$black" "$white" "$black" "$wh" "$bh" "$ew" "$eb" "$pr" "$ne" "$nm" "$sa" "$elapsed" \
+    printf '"%s vs %s","%s","%s","%s","%s",%s,%s,%s,%s,"%s","%s",%s,%s,%s,%s,%s,%s\n' \
+        "$white" "$black" "$white" "$black" "$wh" "$bh" "$ew" "$eb" "$ws" "$bs" "$wci" "$bci" "$pr" "$ne" "$np_" "$nm" "$sa" "$elapsed" \
         >> "$CSV_FILE"
 
     # Accumulate alignment stats (header ELO can be numeric or "?"; skip non-numeric)
