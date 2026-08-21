@@ -11,7 +11,7 @@ import { Chess } from '../../docs/js/chess.esm.js';
 import { ALL_MOVES, mirrorMove, moveIndex, getLegalMovesMask } from '../../docs/js/moves.js';
 import { tokenizeBoard, getHistoricalTokens, buildBatchTensor, buildBatchTensorSingleColor, buildBatchTensorJoint, capIndices, selectSampleIndices } from '../../docs/js/tensor.js';
 import { parsePgnToPositions } from '../../docs/js/pgn.js';
-import { computeScoreStreaming } from '../../docs/js/scoring.js';
+import { computeScoreStreaming, jointPosterior2D, sumMarginals, marginalStats } from '../../docs/js/scoring.js';
 import { makeGrid, windowGrid, upsampleBilinear, marginalModes } from '../../docs/js/surface.js';
 
 // The browser modules expect window.Chess / window.__moveIndex globals.
@@ -139,6 +139,29 @@ function runAll(input) {
     const dst = upsampleBilinear(src, c.srcW, c.srcB, c.dstW, c.dstB);
     const modes = marginalModes(dst, c.dstW, c.dstB);
     return { dst: Array.from(dst), wi: modes.wi, bi: modes.bi };
+  });
+
+  // N. Joint posteriors and 1D marginal stats
+  out.posteriors = (input.posteriorCases || []).map((c) => {
+    const post = jointPosterior2D(
+      Float64Array.from(c.surface),
+      Float64Array.from(c.whiteElos),
+      Float64Array.from(c.blackElos),
+    );
+    const nW = c.whiteElos.length;
+    const nB = c.blackElos.length;
+    const { w, b } = sumMarginals(post, nW, nB);
+    const ws = marginalStats(w, Float64Array.from(c.whiteElos));
+    const bs = marginalStats(b, Float64Array.from(c.blackElos));
+    return {
+      posterior: Array.from(post),
+      wMean: ws.mean,
+      wStd: ws.std,
+      wCi: ws.ci,
+      bMean: bs.mean,
+      bStd: bs.std,
+      bCi: bs.ci,
+    };
   });
 
   // I. PGN parsing
