@@ -9,7 +9,8 @@ const FIDELITY = 50;
 // Compute blended top-1 accuracy + MRR score
 // Processes one ELO at a time to save memory
 function computeScoreStreaming(logitsAllElos, humanMoves, legalMasks, nPos, nElo) {
-  const scores = new Float32Array(nElo);
+  // Float64 to match numpy float64 output of batch_inference.py:_compute_score
+  const scores = new Float64Array(nElo);
   if (nPos === 0) return scores;
 
   for (let e = 0; e < nElo; e++) {

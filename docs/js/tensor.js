@@ -125,6 +125,11 @@ function buildBatchTensor(positions, eloValues, nSample) {
   // Replay game to build history
   const Chess = window.Chess;
   const gameBoard = new Chess();
+  // Positions parsed from a PGN with a [FEN] header start elsewhere;
+  // mirrors python parser's board = game.board()
+  if (positions.length > 0 && positions[0].fenBefore) {
+    gameBoard.load(positions[0].fenBefore);
+  }
 
   for (let posIdx = 0; posIdx < positions.length; posIdx++) {
     const pos = positions[posIdx];
@@ -211,6 +216,9 @@ function buildBatchTensorSingleColor(positions, eloValues, colorIsWhite, opponen
   const allLegalMasks = [];
 
   const gameBoard = new Chess();
+  if (positions.length > 0 && positions[0].fenBefore) {
+    gameBoard.load(positions[0].fenBefore);
+  }
   let targetSeen = 0;
 
   for (let posIdx = 0; posIdx < positions.length; posIdx++) {
@@ -233,12 +241,19 @@ function buildBatchTensorSingleColor(positions, eloValues, colorIsWhite, opponen
 
   if (sampledCount === 0) return null;
 
+  // Stack tokens: (N, 64, 96)
+  const tokensN = new Float32Array(sampledCount * 64 * D_IN);
+  for (let i = 0; i < sampledCount; i++) {
+    tokensN.set(allTokens[i], i * 64 * D_IN);
+  }
+
+  // Tile tokens for all ELO values: (N*M, 64, 96)
   const tokensBatch = new Float32Array(sampledCount * nElo * 64 * D_IN);
   for (let i = 0; i < sampledCount; i++) {
     for (let e = 0; e < nElo; e++) {
-      const src = i * 64 * D_IN;
-      const dst = (i * nElo + e) * 64 * D_IN;
-      tokensBatch.set(allTokens[i].subarray(src, src + 64 * D_IN), dst);
+      const srcOffset = i * 64 * D_IN;
+      const dstOffset = (i * nElo + e) * 64 * D_IN;
+      tokensBatch.set(tokensN.subarray(srcOffset, srcOffset + 64 * D_IN), dstOffset);
     }
   }
 
