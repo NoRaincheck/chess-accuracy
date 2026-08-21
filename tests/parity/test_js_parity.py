@@ -20,7 +20,7 @@ import chess.pgn
 import numpy as np
 import pytest
 
-from chess_accuracy.batch_inference import BatchMaia3Inference, _compute_score
+from chess_accuracy.batch_inference import BatchMaia3Inference, _compute_score, _marginal_stats, joint_posterior_2d
 from chess_accuracy.maia3.dataset import (
     get_historical_tokens,
     get_legal_moves_mask,
@@ -145,6 +145,44 @@ def collect_test_fens():
 MIRROR_UCIS = ["a1a2", "h8h1", "e2e4", "e7e5", "d7d8q", "b1b3", "g2h1q"]
 
 
+def _posterior_cases():
+    """Synthetic score surfaces for posterior/CI parity checks."""
+
+    def gaussian_bump(n_w, n_b):
+        w = np.linspace(300.0, 3000.0, n_w)
+        b = np.linspace(300.0, 3000.0, n_b)
+        ww, bb = np.meshgrid(w, b, indexing="ij")
+        return (
+            -((ww - 1700.0) ** 2) / (2 * 400.0**2) - ((bb - 1300.0) ** 2) / (2 * 350.0**2),
+            w,
+            b,
+        )
+
+    surf1, w1, b1 = gaussian_bump(4, 4)  # stage-B-like fine window
+    surf2, w2, b2 = gaussian_bump(7, 5)
+    rng = np.random.default_rng(7)
+    surf3 = rng.normal(size=(6, 9))  # noisy surface
+    return [
+        {
+            "surface": surf1.ravel().tolist(),
+            "whiteElos": w1.tolist(),
+            "blackElos": b1.tolist(),
+        },
+        {
+            "surface": surf2.ravel().tolist(),
+            "whiteElos": w2.tolist(),
+            "blackElos": b2.tolist(),
+        },
+        {
+            "surface": surf3.ravel().tolist(),
+            "whiteElos": np.linspace(800.0, 2200.0, 6).tolist(),
+            "blackElos": np.linspace(900.0, 2400.0, 9).tolist(),
+        },
+        # Degenerate single-cell surface.
+        {"surface": [3.5], "whiteElos": [1500.0], "blackElos": [1600.0]},
+    ]
+
+
 # ── Harness plumbing ─────────────────────────────────────────────────────────
 
 
@@ -242,6 +280,7 @@ def parity(tmp_path_factory):
             {"src": [2.0], "srcW": 1, "srcB": 1, "dstW": 5, "dstB": 5},
             {"src": [0.0, 1.0, 4.0, 9.0], "srcW": 2, "srcB": 2, "dstW": 4, "dstB": 1},
         ],
+        "posteriorCases": _posterior_cases(),
         "pgns": [SIMPLE_PGN, CLOCK_PGN, CLK_OPP_PGN, PROMO_PGN, CASTLE_PGN, "", "not a pgn"],
     }
     outputs = run_node("run", inputs, tmp_dir)
@@ -561,6 +600,29 @@ class TestSurfaceHelpers:
             col_sums = flat.sum(axis=0)
             assert got["wi"] == int(np.argmax(row_sums))
             assert got["bi"] == int(np.argmax(col_sums))
+
+
+class TestPosteriors:
+    def test_joint_posterior_and_marginal_stats_match_python(self, parity):
+        inputs, outs, _ = parity
+        for case, got in zip(inputs["posteriorCases"], outs["posteriors"]):
+            w_vals = np.array(case["whiteElos"], dtype=np.float64)
+            b_vals = np.array(case["blackElos"], dtype=np.float64)
+            surface = np.array(case["surface"], dtype=np.float64).reshape(len(w_vals), len(b_vals))
+
+            expected = joint_posterior_2d(surface, w_vals, b_vals)
+            np.testing.assert_allclose(
+                np.array(got["posterior"]), expected.ravel(), rtol=1e-12, atol=1e-15
+            )
+
+            for color, post, vals, mean_key, std_key, ci_key in (
+                ("w", expected.sum(axis=1), w_vals, "wMean", "wStd", "wCi"),
+                ("b", expected.sum(axis=0), b_vals, "bMean", "bStd", "bCi"),
+            ):
+                mean, std, (ci_lo, ci_hi) = _marginal_stats(post, vals)
+                assert got[mean_key] == pytest.approx(mean), f"{color} mean: {case}"
+                assert got[std_key] == pytest.approx(std), f"{color} std: {case}"
+                assert got[ci_key] == pytest.approx([ci_lo, ci_hi]), f"{color} ci: {case}"
 
 
 # ── H/J. Scoring & end-to-end through the real ONNX model ────────────────────

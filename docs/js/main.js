@@ -3,7 +3,7 @@ import { moveIndex, getLegalMovesMask } from './moves.js';
 import { parsePgnToPositions } from './pgn.js';
 import { buildBatchTensorJoint } from './tensor.js';
 import { loadModel, isModelLoaded, predict } from './inference.js';
-import { computeScoreStreaming, MIN_ELO, MAX_ELO } from './scoring.js';
+import { computeScoreStreaming, jointPosterior2D, sumMarginals, marginalStats, MIN_ELO, MAX_ELO } from './scoring.js';
 import { makeGrid, windowGrid, upsampleBilinear, marginalModes } from './surface.js';
 
 // Anchor-grid search configuration (mirrors estimate_elo.py defaults)
@@ -29,8 +29,10 @@ const modelStatus = document.getElementById('model-status');
 // Result elements
 const whiteName = document.getElementById('white-name');
 const whiteElo = document.getElementById('white-elo');
+const whiteEloRange = document.getElementById('white-elo-range');
 const blackName = document.getElementById('black-name');
 const blackElo = document.getElementById('black-elo');
+const blackEloRange = document.getElementById('black-elo-range');
 const matchRate = document.getElementById('match-rate');
 const headerInfo = document.getElementById('header-info');
 
@@ -58,12 +60,89 @@ function setProgress(text, percent) {
   progressBar.style.width = (percent || 0) + '%';
 }
 
+// ── Live estimate display ────────────────────────────────────────────────────
+// While the search runs, each row shows the current estimate with a range
+// (the search window), pulsing. Once settled, the range becomes the 95%
+// credible interval from the Stage B posterior and the pulse stops.
+
+const numberState = {};
+
+function prefersReducedMotion() {
+  return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function animateNumber(el, key, to, fmt, dur = 450) {
+  const from = numberState[key];
+  numberState[key] = to;
+  cancelAnimationFrame(el.__tweenRaf);
+  if (from === undefined || prefersReducedMotion()) {
+    el.textContent = fmt(to);
+    return;
+  }
+  const start = performance.now();
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / dur);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = fmt(from + (to - from) * eased);
+    if (t < 1) el.__tweenRaf = requestAnimationFrame(step);
+  };
+  el.__tweenRaf = requestAnimationFrame(step);
+}
+
+function setPulsing(pulsing) {
+  for (const el of [whiteElo, whiteEloRange, blackElo, blackEloRange]) {
+    el.classList.toggle('pulsing', pulsing);
+  }
+}
+
+function fmtRange(lo, hi) {
+  return `${Math.round(lo)}–${Math.round(hi)}`;
+}
+
+function fmtCi(ci) {
+  return `${Math.round(ci[0])}–${Math.round(ci[1])} · 95% CI`;
+}
+
+function resetLiveEstimates() {
+  for (const key of ['wPt', 'bPt']) delete numberState[key];
+  whiteElo.textContent = '—';
+  blackElo.textContent = '—';
+}
+
+function startLiveEstimates() {
+  resultsPanel.classList.add('has-results');
+  headerInfo.style.display = 'none';
+  matchRate.textContent = '—';
+  resetLiveEstimates();
+  // Full search range until the anchor grid localizes the modes.
+  whiteEloRange.textContent = fmtRange(MIN_ELO, MAX_ELO);
+  blackEloRange.textContent = fmtRange(MIN_ELO, MAX_ELO);
+  setPulsing(true);
+}
+
+function updateLiveEstimates(wCenter, bCenter) {
+  animateNumber(whiteElo, 'wPt', wCenter, (v) => String(Math.round(v)));
+  animateNumber(blackElo, 'bPt', bCenter, (v) => String(Math.round(v)));
+  whiteEloRange.textContent = fmtRange(
+    Math.max(MIN_ELO, wCenter - FINE_MARGIN),
+    Math.min(MAX_ELO, wCenter + FINE_MARGIN),
+  );
+  blackEloRange.textContent = fmtRange(
+    Math.max(MIN_ELO, bCenter - FINE_MARGIN),
+    Math.min(MAX_ELO, bCenter + FINE_MARGIN),
+  );
+}
+
 function showResults(result) {
   whiteName.textContent = result.white || 'White';
   blackName.textContent = result.black || 'Black';
-  whiteElo.textContent = Math.round(result.estWhiteElo);
-  blackElo.textContent = Math.round(result.estBlackElo);
+  animateNumber(whiteElo, 'wPt', result.estWhiteElo, (v) => String(Math.round(v)));
+  animateNumber(blackElo, 'bPt', result.estBlackElo, (v) => String(Math.round(v)));
   matchRate.textContent = (result.peakRate * 100).toFixed(1) + '%';
+
+  whiteEloRange.textContent = result.whiteCi ? fmtCi(result.whiteCi) : '—';
+  blackEloRange.textContent = result.blackCi ? fmtCi(result.blackCi) : '—';
+  setPulsing(false);
 
   // Show header ELO comparison
   if (result.whiteEloHdr && result.blackEloHdr) {
@@ -78,6 +157,10 @@ function showResults(result) {
 
 function hideResults() {
   resultsPanel.classList.remove('has-results');
+  setPulsing(false);
+  resetLiveEstimates();
+  whiteEloRange.textContent = '—';
+  blackEloRange.textContent = '—';
 }
 
 // Main estimation function
@@ -110,6 +193,8 @@ async function estimateElo() {
 
   window.__currentGame = game;
 
+  startLiveEstimates();
+
   setProgress(`Parsed ${game.nMoves} moves. Building tensors...`, 15);
   await sleep(50);
 
@@ -127,6 +212,7 @@ async function estimateElo() {
   if (!batchA) {
     alert('No informative positions found to evaluate.');
     estimateBtn.disabled = false;
+    hideResults();
     setProgress('', 0);
     return;
   }
@@ -146,15 +232,20 @@ async function estimateElo() {
   let bestW = denseVals[wi];
   let bestB = denseVals[bi];
 
+  updateLiveEstimates(bestW, bestB);
+
   setProgress(`Modes: W=${Math.round(bestW)}, B=${Math.round(bestB)}. Refining...`, 65);
   await sleep(50);
 
   // Stage B: joint fine grid around the modes. If a mode lands on the window
   // edge the true mode may lie just outside — slide the window there once.
   let peakRate = 0;
+  let wFine = null;
+  let bFine = null;
+  let scoresB = null;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const wFine = windowGrid(bestW, FINE_MARGIN, FINE_N, MIN_ELO, MAX_ELO);
-    const bFine = windowGrid(bestB, FINE_MARGIN, FINE_N, MIN_ELO, MAX_ELO);
+    wFine = windowGrid(bestW, FINE_MARGIN, FINE_N, MIN_ELO, MAX_ELO);
+    bFine = windowGrid(bestB, FINE_MARGIN, FINE_N, MIN_ELO, MAX_ELO);
 
     setProgress(`Stage B${attempt ? ' (re-centered)' : ''}: fine grid ${wFine.length}x${bFine.length}...`, 70 + attempt * 10);
     await sleep(50);
@@ -163,7 +254,7 @@ async function estimateElo() {
     if (!batchB) break;
 
     const resultB = await predict(batchB.tokens, batchB.selfElos, batchB.oppoElos);
-    const scoresB = computeScoreStreaming(resultB.logitsMove, batchB.humanMoves, batchB.legalMasks, batchB.nPositions, batchB.nElos);
+    scoresB = computeScoreStreaming(resultB.logitsMove, batchB.humanMoves, batchB.legalMasks, batchB.nPositions, batchB.nElos);
 
     let bestIdx = 0;
     for (let k = 1; k < scoresB.length; k++) {
@@ -177,6 +268,7 @@ async function estimateElo() {
     if (attempt === 0 && onEdge) {
       bestW = wFine[wiBest];
       bestB = bFine[biBest];
+      updateLiveEstimates(bestW, bestB);
       continue;
     }
 
@@ -188,6 +280,16 @@ async function estimateElo() {
   setProgress('Done!', 100);
   await sleep(200);
 
+  // 95% credible intervals from the Stage B posterior marginals.
+  let whiteCi = null;
+  let blackCi = null;
+  if (scoresB && wFine && bFine) {
+    const posterior = jointPosterior2D(scoresB, wFine, bFine);
+    const { w: wPost, b: bPost } = sumMarginals(posterior, wFine.length, bFine.length);
+    whiteCi = marginalStats(wPost, wFine).ci;
+    blackCi = marginalStats(bPost, bFine).ci;
+  }
+
   // Show results
   showResults({
     white: game.headers.White || 'White',
@@ -197,6 +299,8 @@ async function estimateElo() {
     estWhiteElo: bestW,
     estBlackElo: bestB,
     peakRate: peakRate,
+    whiteCi: whiteCi,
+    blackCi: blackCi,
   });
 
   setProgress('', 0);
