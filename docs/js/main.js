@@ -5,6 +5,7 @@ import { buildBatchTensorJoint } from './tensor.js';
 import { loadModel, isModelLoaded, predict } from './inference.js';
 import { computeScoreStreaming, jointPosterior2D, sumMarginals, marginalStats, MIN_ELO, MAX_ELO } from './scoring.js';
 import { makeGrid, windowGrid, upsampleBilinear, marginalModes } from './surface.js';
+import { initViewer, setViewerGame } from './viewer.js';
 
 // Anchor-grid search configuration (mirrors estimate_elo.py defaults)
 const ANCHOR_STEP = 700;   // stage A full-range joint anchor grid spacing
@@ -38,6 +39,8 @@ const headerInfo = document.getElementById('header-info');
 
 // Initialize
 async function init() {
+  initViewer();
+
   // Load model in background
   loadModelStatus('Loading model...');
   try {
@@ -192,6 +195,9 @@ async function estimateElo() {
   }
 
   window.__currentGame = game;
+
+  // Load the game into the board viewer (board + move navigation + top-k)
+  setViewerGame(game);
 
   startLiveEstimates();
 

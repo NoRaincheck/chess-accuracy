@@ -385,6 +385,38 @@ function buildBatchTensorJoint(positions, whiteElos, blackElos, opts) {
   };
 }
 
+// Build model input for a single position of a parsed game.
+// ply is 0-based: ply p = position before move p (ply === positions.length
+// means the final position after the last move). Replays the game from the
+// start collecting the tokenized board history, mirroring the replay loops
+// in the batch builders above.
+//
+// Returns { tokens: Float32Array(64*96), board, isBlackTurn } or null if
+// ply is out of range.
+function buildPositionInput(positions, ply) {
+  const Chess = window.Chess;
+  if (ply < 0 || ply > positions.length) return null;
+
+  const gameBoard = new Chess();
+  if (positions.length > 0 && positions[0].fenBefore) {
+    gameBoard.load(positions[0].fenBefore);
+  }
+
+  const history = [];
+  for (let i = 0; i < ply; i++) {
+    history.push(tokenizeBoard(gameBoard));
+    while (history.length > HISTORY_LEN) history.shift();
+    gameBoard.move(positions[i].moveSan, { sloppy: true });
+  }
+  // The current board is the last history frame
+  history.push(tokenizeBoard(gameBoard));
+  while (history.length > HISTORY_LEN) history.shift();
+
+  const tokens = getHistoricalTokens(history);
+  const isBlackTurn = gameBoard.turn() === 'b';
+  return { tokens, board: gameBoard, isBlackTurn };
+}
+
 export {
   tokenizeBoard,
   getHistoricalTokens,
@@ -392,6 +424,7 @@ export {
   buildBatchTensor,
   buildBatchTensorSingleColor,
   buildBatchTensorJoint,
+  buildPositionInput,
   capIndices,
   D_IN,
 };
