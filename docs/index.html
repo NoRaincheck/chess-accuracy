@@ -54,6 +54,29 @@
           </div>
         </div>
       </div>
+
+      <div class="board-panel">
+        <div class="board-header">
+          <span id="ply-label">Paste a PGN and press Estimate ELO to load the board</span>
+          <span id="viewer-status"></span>
+        </div>
+        <div id="board" class="board-empty"></div>
+        <div class="nav-controls">
+          <button id="nav-start" class="btn btn-secondary nav-btn" disabled title="Start (Home)">&#x23EE;</button>
+          <button id="nav-prev" class="btn btn-secondary nav-btn" disabled title="Previous move (&#8592;)">&#x25C0;</button>
+          <button id="nav-next" class="btn btn-secondary nav-btn" disabled title="Next move (&#8594;)">&#x25B6;</button>
+          <button id="nav-end" class="btn btn-secondary nav-btn" disabled title="End (End)">&#x23ED;</button>
+        </div>
+        <div id="move-list" class="move-list"></div>
+        <div class="topk-panel">
+          <div class="topk-title">Top 5 predicted moves by ELO
+            <span class="topk-sub">(750–2500, step 250 · played move highlighted)</span>
+          </div>
+          <div id="topk-body" class="topk-body">
+            <div class="topk-empty">No position loaded.</div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <footer>
